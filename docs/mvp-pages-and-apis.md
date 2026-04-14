@@ -267,9 +267,9 @@ Session Summary
 The backend should expose two interface types:
 
 - HTTP for auth, profile, session lifecycle, and summary data
-- WebSocket for real-time voice conversation events
+- raw WebSocket for real-time voice conversation events
 
-For MVP, this is enough. Internal services can still use gRPC later without exposing it to the iOS client.
+For MVP, this is enough. Internal service extraction should later use `gRPC over TCP`, while the iOS client continues to use raw WebSocket externally.
 
 ## REST API Contract
 
@@ -476,8 +476,13 @@ Client opens:
 
 ```text
 GET wss://api.example.com/v1/realtime?sessionId=ses_123
-Authorization: Bearer <realtime-jwt>
 ```
+
+MVP note:
+
+- this is a raw WebSocket endpoint, not Socket.IO
+- the `realtime.token` field is reserved for later auth wiring
+- until ASR is connected, `audio.commit` may optionally carry a `text` field for development
 
 ### Client -> Server Events
 
@@ -499,7 +504,8 @@ Marks the end of the current user utterance.
 
 ```json
 {
-  "type": "audio.commit"
+  "type": "audio.commit",
+  "text": "Tell me something about the Silk Road."
 }
 ```
 
