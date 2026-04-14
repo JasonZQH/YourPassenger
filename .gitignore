@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Node / NestJS
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+
+# Swift / Xcode
+DerivedData/
+.build/
+.swiftpm/
+Packages/
+*.xcuserstate
+xcuserdata/
+
+# Xcode project workspace user data
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
