@@ -8,17 +8,17 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('auth/apple')
-  signInWithApple(@Body() body: AppleAuthBody) {
+  async signInWithApple(@Body() body: AppleAuthBody) {
     return this.authService.signInWithApple(body.identityToken);
   }
 
   @Post('auth/guest')
-  signInAsGuest() {
+  async signInAsGuest() {
     return this.authService.signInAsGuest();
   }
 
   @Get('me')
-  getCurrentUser() {
+  async getCurrentUser() {
     return this.authService.getCurrentUser();
   }
 }

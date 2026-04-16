@@ -7,6 +7,8 @@ dist/
 coverage/
 .env
 .env.*
+!.env.example
+!**/.env.example
 *.tsbuildinfo
 
 # Swift / Xcode

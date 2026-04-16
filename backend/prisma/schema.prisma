@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthKind {
+  apple
+  guest
+}
+
+enum SessionStatus {
+  active
+  ended
+}
+
+enum AssistantState {
+  idle
+  listening
+  thinking
+  speaking
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+model User {
+  id               String   @id
+  authKind         AuthKind
+  providerUserId   String
+  nickname         String
+  profileCompleted Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  profile  UserProfile?
+  sessions Session[]
+
+  @@unique([authKind, providerUserId])
+}
+
+model UserProfile {
+  userId                String            @id
+  nickname              String
+  interests             String[]          @default([])
+  ageRange              String
+  gender                String
+  occupationCategory    String
+  hobbyTags             String[]          @default([])
+  preferredLanguage     String
+  conversationStyle     String
+  responseLength        String
+  proactiveTopicPushing Boolean
+  avoidTopicTags        String[]          @default([])
+  updatedAt             DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id                   String         @id
+  userId               String
+  status               SessionStatus  @default(active)
+  startedAt            DateTime       @default(now())
+  endedAt              DateTime?
+  latestAssistantState AssistantState @default(idle)
+  turnCount            Int            @default(0)
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turns   SessionTurn[]
+  summary SessionSummary?
+
+  @@index([userId, startedAt(sort: Desc)])
+}
+
+model SessionTurn {
+  id        String      @id @default(cuid())
+  sessionId String
+  turnIndex Int
+  role      MessageRole
+  text      String
+  createdAt DateTime    @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, turnIndex])
+  @@index([sessionId, turnIndex])
+  @@index([sessionId, createdAt])
+}
+
+model SessionSummary {
+  sessionId        String   @id
+  durationSeconds  Int
+  summary          String
+  topics           String[] @default([])
+  memoryCandidates String[] @default([])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}

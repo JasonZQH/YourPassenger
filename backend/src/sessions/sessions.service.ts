@@ -1,19 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { ProfileService } from '../profile/profile.service';
-import { InMemoryStoreService } from '../store/store.service';
+import { StoreService } from '../store/store.service';
 import { ConversationOrchestratorService } from '../conversation/conversation.service';
 
 @Injectable()
 export class SessionsService {
   constructor(
-    private readonly store: InMemoryStoreService,
+    private readonly store: StoreService,
     private readonly profileService: ProfileService,
     private readonly conversationOrchestrator: ConversationOrchestratorService,
   ) {}
 
-  createSession() {
-    const session = this.store.createSession();
+  async createSession() {
+    const session = await this.store.createSession();
 
     return {
       session: {
@@ -28,8 +28,8 @@ export class SessionsService {
     };
   }
 
-  getSession(sessionId: string) {
-    const session = this.store.getSession(sessionId);
+  async getSession(sessionId: string) {
+    const session = await this.store.getSession(sessionId);
     if (!session) {
       throw new NotFoundException(`Session ${sessionId} not found.`);
     }
@@ -43,18 +43,18 @@ export class SessionsService {
     };
   }
 
-  endSession(sessionId: string) {
-    const session = this.store.getSession(sessionId);
+  async endSession(sessionId: string) {
+    const session = await this.store.getSession(sessionId);
     if (!session) {
       throw new NotFoundException(`Session ${sessionId} not found.`);
     }
 
     const summary = this.conversationOrchestrator.buildSummary(
       session,
-      this.profileService.getProfile(),
+      await this.profileService.getProfile(),
     );
 
-    const ended = this.store.endSession(sessionId, summary);
+    const ended = await this.store.endSession(sessionId, summary);
     if (!ended?.endedAt) {
       throw new NotFoundException(`Session ${sessionId} not found.`);
     }
@@ -66,25 +66,25 @@ export class SessionsService {
     };
   }
 
-  getSummary(sessionId: string) {
-    const stored = this.store.getSummary(sessionId);
+  async getSummary(sessionId: string) {
+    const stored = await this.store.getSummary(sessionId);
     if (stored) {
       return stored;
     }
 
-    const session = this.store.getSession(sessionId);
+    const session = await this.store.getSession(sessionId);
     if (!session) {
       throw new NotFoundException(`Session ${sessionId} not found.`);
     }
 
     return this.conversationOrchestrator.buildSummary(
       session,
-      this.profileService.getProfile(),
+      await this.profileService.getProfile(),
     );
   }
 
-  appendUserTurn(sessionId: string, text: string) {
-    const session = this.store.appendTurn(sessionId, 'user', text);
+  async appendUserTurn(sessionId: string, text: string) {
+    const session = await this.store.appendTurn(sessionId, 'user', text);
     if (!session) {
       throw new NotFoundException(`Session ${sessionId} not found.`);
     }
@@ -92,8 +92,8 @@ export class SessionsService {
     return session;
   }
 
-  appendAssistantTurn(sessionId: string, text: string) {
-    const session = this.store.appendTurn(sessionId, 'assistant', text);
+  async appendAssistantTurn(sessionId: string, text: string) {
+    const session = await this.store.appendTurn(sessionId, 'assistant', text);
     if (!session) {
       throw new NotFoundException(`Session ${sessionId} not found.`);
     }
@@ -101,8 +101,8 @@ export class SessionsService {
     return session;
   }
 
-  setAssistantState(sessionId: string, state: 'idle' | 'listening' | 'thinking' | 'speaking') {
-    const session = this.store.updateAssistantState(sessionId, state);
+  async setAssistantState(sessionId: string, state: 'idle' | 'listening' | 'thinking' | 'speaking') {
+    const session = await this.store.updateAssistantState(sessionId, state);
     if (!session) {
       throw new NotFoundException(`Session ${sessionId} not found.`);
     }

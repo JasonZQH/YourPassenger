@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 
-import { InMemoryStoreService } from '../store/store.service';
+import { StoreService } from '../store/store.service';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly store: InMemoryStoreService) {}
+  constructor(private readonly store: StoreService) {}
 
-  signInWithApple(_identityToken: string) {
-    const user = this.store.signIn('apple');
+  async signInWithApple(_identityToken: string) {
+    const user = await this.store.signIn('apple');
 
     return {
       accessToken: 'dev-access-token',
@@ -16,8 +16,8 @@ export class AuthService {
     };
   }
 
-  signInAsGuest() {
-    const user = this.store.signIn('guest');
+  async signInAsGuest() {
+    const user = await this.store.signIn('guest');
 
     return {
       accessToken: 'guest-access-token',
@@ -26,7 +26,7 @@ export class AuthService {
     };
   }
 
-  getCurrentUser() {
+  async getCurrentUser() {
     return this.store.getCurrentUser();
   }
 }

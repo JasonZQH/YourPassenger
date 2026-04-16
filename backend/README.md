@@ -18,8 +18,8 @@ This directory contains the minimal NestJS backend skeleton for the AI Passenger
 
 ## Notes
 
-- This version uses in-memory state only.
-- There is no real auth, persistence, ASR, TTS, or database layer yet.
+- This version uses PostgreSQL persistence through Prisma.
+- Auth tokens are still mock tokens for MVP.
 - The realtime server is a raw WebSocket mock conversation path to support client integration before the full agentic chain exists.
 
 ## Run
@@ -27,6 +27,9 @@ This directory contains the minimal NestJS backend skeleton for the AI Passenger
 ```bash
 cd backend
 npm install
+npm run prisma:generate
+# configure DATABASE_URL in .env
+npm run prisma:migrate:dev -- --name init
 npm run start:dev
 ```
 
