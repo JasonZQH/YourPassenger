@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import { IncomingMessage } from 'http';
 import { URL } from 'url';
@@ -10,7 +16,6 @@ import { SessionsService } from '../sessions/sessions.service';
 import {
   ClientRealtimeEvent,
   ClientTextAudioCommitEvent,
-  PingEvent,
   ServerRealtimeEvent,
 } from './realtime.types';
 
@@ -65,7 +70,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
       });
 
       socket.on('message', (data) => {
-        this.handleMessage(socket, data);
+        void this.handleMessage(socket, data);
       });
 
       socket.on('close', () => {
@@ -101,7 +106,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     this.wsServer.close();
   }
 
-  private handleMessage(socket: WebSocket, raw: WebSocket.RawData) {
+  private async handleMessage(socket: WebSocket, raw: WebSocket.RawData) {
     const connection = this.connections.get(socket);
     if (!connection) {
       return;
@@ -120,52 +125,68 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    switch (parsed.type) {
-      case 'audio.chunk':
-        this.sessionsService.setAssistantState(connection.sessionId, 'listening');
-        this.send(socket, {
-          type: 'assistant.state',
-          state: 'listening',
-        });
-        break;
-      case 'audio.commit':
-        this.handleAudioCommit(socket, connection.sessionId, parsed);
-        break;
-      case 'assistant.interrupt':
-        this.sessionsService.setAssistantState(connection.sessionId, 'idle');
-        this.send(socket, {
-          type: 'assistant.interrupted',
-          messageId: `msg_${Date.now()}`,
-        });
-        this.send(socket, {
-          type: 'assistant.state',
-          state: 'idle',
-        });
-        break;
-      case 'ping':
-        this.send(socket, {
-          type: 'pong',
-          ts: parsed.ts ?? Date.now(),
-        });
-        break;
-      default:
-        this.send(socket, {
-          type: 'error',
-          code: 'UNSUPPORTED_EVENT',
-          message: `Unsupported realtime event: ${String((parsed as { type?: string }).type)}`,
-        });
+    try {
+      switch (parsed.type) {
+        case 'audio.chunk':
+          await this.sessionsService.setAssistantState(connection.sessionId, 'listening');
+          this.send(socket, {
+            type: 'assistant.state',
+            state: 'listening',
+          });
+          break;
+        case 'audio.commit':
+          await this.handleAudioCommit(socket, connection.sessionId, parsed);
+          break;
+        case 'assistant.interrupt':
+          await this.sessionsService.setAssistantState(connection.sessionId, 'idle');
+          this.send(socket, {
+            type: 'assistant.interrupted',
+            messageId: `msg_${Date.now()}`,
+          });
+          this.send(socket, {
+            type: 'assistant.state',
+            state: 'idle',
+          });
+          break;
+        case 'ping':
+          this.send(socket, {
+            type: 'pong',
+            ts: parsed.ts ?? Date.now(),
+          });
+          break;
+        default:
+          this.send(socket, {
+            type: 'error',
+            code: 'UNSUPPORTED_EVENT',
+            message: `Unsupported realtime event: ${String((parsed as { type?: string }).type)}`,
+          });
+      }
+    } catch (error) {
+      const isNotFound = error instanceof NotFoundException;
+      this.logger.error(
+        `Realtime event handling failed for session ${connection.sessionId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      this.send(socket, {
+        type: 'error',
+        code: isNotFound ? 'SESSION_NOT_FOUND' : 'SERVER_ERROR',
+        message: isNotFound
+          ? `Session ${connection.sessionId} not found.`
+          : 'Realtime processing failed.',
+      });
     }
   }
 
-  private handleAudioCommit(
+  private async handleAudioCommit(
     socket: WebSocket,
     sessionId: string,
     event: ClientTextAudioCommitEvent,
   ) {
     const utterance = event.text?.trim() || 'Tell me something interesting for the road.';
 
-    this.sessionsService.appendUserTurn(sessionId, utterance);
-    this.sessionsService.setAssistantState(sessionId, 'thinking');
+    await this.sessionsService.appendUserTurn(sessionId, utterance);
+    await this.sessionsService.setAssistantState(sessionId, 'thinking');
 
     this.send(socket, {
       type: 'transcript.final',
@@ -180,11 +201,11 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
 
     const reply = this.conversationOrchestrator.buildAssistantReply({
       utterance,
-      profile: this.profileService.getProfile(),
+      profile: await this.profileService.getProfile(),
     });
 
-    this.sessionsService.appendAssistantTurn(sessionId, reply);
-    this.sessionsService.setAssistantState(sessionId, 'speaking');
+    await this.sessionsService.appendAssistantTurn(sessionId, reply);
+    await this.sessionsService.setAssistantState(sessionId, 'speaking');
 
     this.send(socket, {
       type: 'assistant.text',
@@ -204,7 +225,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
       payload: '',
     });
 
-    this.sessionsService.setAssistantState(sessionId, 'idle');
+    await this.sessionsService.setAssistantState(sessionId, 'idle');
 
     this.send(socket, {
       type: 'assistant.state',

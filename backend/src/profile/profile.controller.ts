@@ -8,12 +8,12 @@ export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
   @Get()
-  getProfile() {
+  async getProfile() {
     return this.profileService.getProfile();
   }
 
   @Put()
-  updateProfile(@Body() body: UpdateProfileBody) {
+  async updateProfile(@Body() body: UpdateProfileBody) {
     return this.profileService.updateProfile(body);
   }
 }
