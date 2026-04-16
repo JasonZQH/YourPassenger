@@ -3,12 +3,12 @@ import Foundation
 final class MockAPIClient: APIClient {
     private var storedProfile: UserProfile?
 
-    func bootstrap() async -> BootstrapPayload {
+    func bootstrap() async throws -> BootstrapPayload {
         await pause()
         return BootstrapPayload(isAuthenticated: false, profile: storedProfile)
     }
 
-    func signIn(method: AuthMethod) async -> BootstrapPayload {
+    func signIn(method: AuthMethod) async throws -> BootstrapPayload {
         await pause()
         return BootstrapPayload(isAuthenticated: true, profile: storedProfile)
     }
@@ -21,7 +21,12 @@ final class MockAPIClient: APIClient {
 
     func createSession() async throws -> ChatSession {
         await pause()
-        return ChatSession(id: UUID().uuidString, startedAt: .now)
+        return ChatSession(
+            id: UUID().uuidString,
+            startedAt: .now,
+            wsURL: URL(string: "ws://localhost:3000/v1/realtime?sessionId=mock-session")!,
+            realtimeToken: "mock-token"
+        )
     }
 
     func endSession(id: String) async throws -> SessionSummary {

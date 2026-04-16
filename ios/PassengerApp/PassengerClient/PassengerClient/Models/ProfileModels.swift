@@ -1,6 +1,6 @@
 import Foundation
 
-struct UserProfile: Equatable {
+struct UserProfile: Equatable, Codable {
     var nickname: String
     var interests: Set<InterestTag>
     var ageRange: AgeRange
@@ -28,7 +28,7 @@ struct UserProfile: Equatable {
     )
 }
 
-enum InterestTag: String, CaseIterable, Identifiable {
+enum InterestTag: String, CaseIterable, Identifiable, Codable {
     case history
     case internationalNews = "international_news"
     case sports
@@ -51,7 +51,7 @@ enum InterestTag: String, CaseIterable, Identifiable {
     }
 }
 
-enum AgeRange: String, CaseIterable, Identifiable {
+enum AgeRange: String, CaseIterable, Identifiable, Codable {
     case under18 = "under_18"
     case eighteenToTwentyFour = "18_24"
     case twentyFiveToThirtyFour = "25_34"
@@ -73,7 +73,7 @@ enum AgeRange: String, CaseIterable, Identifiable {
     }
 }
 
-enum GenderIdentity: String, CaseIterable, Identifiable {
+enum GenderIdentity: String, CaseIterable, Identifiable, Codable {
     case female
     case male
     case nonbinary
@@ -93,7 +93,7 @@ enum GenderIdentity: String, CaseIterable, Identifiable {
     }
 }
 
-enum OccupationCategory: String, CaseIterable, Identifiable {
+enum OccupationCategory: String, CaseIterable, Identifiable, Codable {
     case student
     case tech
     case finance
@@ -112,7 +112,7 @@ enum OccupationCategory: String, CaseIterable, Identifiable {
     }
 }
 
-enum HobbyTag: String, CaseIterable, Identifiable {
+enum HobbyTag: String, CaseIterable, Identifiable, Codable {
     case reading
     case fitness
     case cooking
@@ -131,7 +131,7 @@ enum HobbyTag: String, CaseIterable, Identifiable {
     }
 }
 
-enum ConversationStyle: String, CaseIterable, Identifiable {
+enum ConversationStyle: String, CaseIterable, Identifiable, Codable {
     case relaxed
     case curious
     case analytical
@@ -143,7 +143,7 @@ enum ConversationStyle: String, CaseIterable, Identifiable {
     }
 }
 
-enum ResponseLength: String, CaseIterable, Identifiable {
+enum ResponseLength: String, CaseIterable, Identifiable, Codable {
     case short
     case medium
 
@@ -154,7 +154,7 @@ enum ResponseLength: String, CaseIterable, Identifiable {
     }
 }
 
-enum AvoidTopicTag: String, CaseIterable, Identifiable {
+enum AvoidTopicTag: String, CaseIterable, Identifiable, Codable {
     case politics
     case religion
     case graphicViolence = "graphic_violence"

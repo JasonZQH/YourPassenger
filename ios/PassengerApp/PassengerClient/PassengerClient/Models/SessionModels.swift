@@ -3,6 +3,8 @@ import Foundation
 struct ChatSession: Equatable {
     let id: String
     let startedAt: Date
+    let wsURL: URL
+    let realtimeToken: String
 }
 
 struct SessionSummary: Equatable {
@@ -23,7 +25,7 @@ enum MessageRole: Equatable {
     case assistant
 }
 
-enum AssistantState: String {
+enum AssistantState: String, Codable {
     case idle
     case listening
     case thinking

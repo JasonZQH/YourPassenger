@@ -16,6 +16,8 @@ struct RootView: View {
                 AuthView()
             case .onboarding:
                 OnboardingView(mode: .create)
+            case .passengerNaming:
+                PassengerNamingView()
             case .home:
                 HomeView()
             case .profile:

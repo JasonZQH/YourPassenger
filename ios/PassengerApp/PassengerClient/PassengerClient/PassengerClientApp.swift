@@ -9,7 +9,7 @@ import SwiftUI
 
 @main
 struct PassengerApp: App {
-    @StateObject private var appViewModel = AppViewModel(apiClient: MockAPIClient())
+    @StateObject private var appViewModel = AppViewModel(apiClient: BackendAPIClient())
 
     var body: some Scene {
         WindowGroup {
@@ -21,4 +21,3 @@ struct PassengerApp: App {
         }
     }
 }
-

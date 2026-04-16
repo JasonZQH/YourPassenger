@@ -27,7 +27,7 @@ struct HomeView: View {
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundStyle(PassengerTheme.ink)
 
-                    Text("Your AI passenger is tuned for \(interestPreview).")
+                    Text("\(appViewModel.passengerName) is tuned for \(interestPreview).")
                         .font(.system(size: 16, weight: .medium, design: .rounded))
                         .foregroundStyle(PassengerTheme.secondaryInk)
 

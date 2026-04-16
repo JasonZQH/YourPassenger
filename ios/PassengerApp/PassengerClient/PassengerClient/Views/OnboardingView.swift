@@ -86,7 +86,12 @@ struct OnboardingView: View {
 
                 PassengerPrimaryButton(title: mode == .create ? "Continue" : "Save", isLoading: appViewModel.isBusy) {
                     Task {
-                        await appViewModel.completeOnboarding(with: normalizedDraft)
+                        switch mode {
+                        case .create:
+                            await appViewModel.completeOnboardingForCreate(with: normalizedDraft)
+                        case .edit:
+                            await appViewModel.saveProfileChanges(with: normalizedDraft)
+                        }
                     }
                 }
                 .disabled(!isValid)

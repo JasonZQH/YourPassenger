@@ -7,77 +7,121 @@ final class ChatViewModel: ObservableObject {
     @Published var partialTranscript = ""
     @Published var messages: [MessageBubble] = []
     @Published var isInterrupted = false
+    @Published var connectionStatus = "Connecting..."
 
     private let profile: UserProfile
     private let session: ChatSession
+    private let realtimeClient: RealtimeWebSocketClient
+    private let cannedPrompts = [
+        "Tell me something interesting about the Silk Road.",
+        "Give me a short history topic for a drive.",
+        "Talk to me about Roman roads."
+    ]
+    private var nextPromptIndex = 0
 
     init(session: ChatSession, profile: UserProfile) {
         self.session = session
         self.profile = profile
-        self.messages = [
-            MessageBubble(
-                id: UUID().uuidString,
-                role: .assistant,
-                text: "Ready when you are, \(profile.nickname)."
-            )
-        ]
+        self.realtimeClient = RealtimeWebSocketClient(url: session.wsURL, token: session.realtimeToken)
     }
 
-    func simulateTurn() async {
-        guard assistantState == .idle else { return }
-
-        isInterrupted = false
-        assistantState = .listening
-        partialTranscript = "Tell me something interesting about the Silk Road."
-        try? await Task.sleep(nanoseconds: 800_000_000)
-
-        messages.append(
-            MessageBubble(
-                id: UUID().uuidString,
-                role: .user,
-                text: partialTranscript
+    func connect() async {
+        do {
+            try await realtimeClient.connect { [weak self] event in
+                Task { @MainActor in
+                    self?.handle(event: event)
+                }
+            }
+            connectionStatus = "Connected to backend"
+            print("[WS] Connected:", session.wsURL.absoluteString)
+        } catch {
+            connectionStatus = "Realtime unavailable"
+            messages.append(
+                MessageBubble(
+                    id: UUID().uuidString,
+                    role: .assistant,
+                    text: "I could not connect to the realtime service."
+                )
             )
-        )
+            print("[WS] Connect error:", error.localizedDescription)
+        }
+    }
 
-        assistantState = .thinking
-        try? await Task.sleep(nanoseconds: 900_000_000)
+    func disconnect() {
+        realtimeClient.disconnect()
+    }
 
-        assistantState = .speaking
-        partialTranscript = ""
+    func sendPrompt() async {
+        guard assistantState == .idle || assistantState == .listening else { return }
 
-        let response = "The Silk Road was less one road and more a trading network. Since you like \(profile.interests.first?.title.lowercased() ?? "history"), I would frame it as an exchange of ideas as much as goods."
+        let prompt = cannedPrompts[nextPromptIndex % cannedPrompts.count]
+        nextPromptIndex += 1
+        partialTranscript = prompt
 
-        messages.append(
-            MessageBubble(
-                id: UUID().uuidString,
-                role: .assistant,
-                text: response
-            )
-        )
-
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-
-        if !isInterrupted {
-            assistantState = .idle
+        do {
+            try await realtimeClient.sendAudioCommit(text: prompt)
+            print("[WS] Sent audio.commit:", prompt)
+        } catch {
+            connectionStatus = "Failed to send"
+            print("[WS] Send error:", error.localizedDescription)
         }
     }
 
     func interrupt() {
         guard assistantState == .speaking else { return }
         isInterrupted = true
-        assistantState = .idle
+        Task {
+            try? await realtimeClient.sendInterrupt()
+        }
     }
 
     var statusText: String {
         switch assistantState {
         case .idle:
-            return "Tap the mic to simulate a user utterance."
+            return connectionStatus == "Connected to backend"
+                ? "Tap the mic to send a real websocket event."
+                : connectionStatus
         case .listening:
             return "Listening for the end of your utterance."
         case .thinking:
             return "Planning a short response."
         case .speaking:
             return "Speaking. The interrupt button should always be within reach."
+        }
+    }
+
+    private func handle(event: RealtimeServerEvent) {
+        switch event {
+        case .sessionReady(let sessionId):
+            connectionStatus = "Session ready: \(sessionId)"
+        case .transcriptFinal(_, let text):
+            partialTranscript = ""
+            messages.append(
+                MessageBubble(
+                    id: UUID().uuidString,
+                    role: .user,
+                    text: text
+                )
+            )
+        case .assistantState(let state):
+            assistantState = state
+        case .assistantText(_, let text):
+            messages.append(
+                MessageBubble(
+                    id: UUID().uuidString,
+                    role: .assistant,
+                    text: text
+                )
+            )
+        case .assistantAudio:
+            break
+        case .assistantInterrupted:
+            assistantState = .idle
+        case .pong:
+            break
+        case .error(let code, let message):
+            connectionStatus = "\(code): \(message)"
+            print("[WS] Server error:", code, message)
         }
     }
 }
@@ -143,7 +187,7 @@ struct LiveChatView: View {
 
                     Button {
                         Task {
-                            await chatViewModel.simulateTurn()
+                            await chatViewModel.sendPrompt()
                         }
                     } label: {
                         ZStack {
@@ -192,5 +236,11 @@ struct LiveChatView: View {
             }
         }
         .padding(PassengerTheme.pagePadding)
+        .task {
+            await chatViewModel.connect()
+        }
+        .onDisappear {
+            chatViewModel.disconnect()
+        }
     }
 }
