@@ -44,3 +44,8 @@ Realtime WebSocket:
 ```text
 ws://localhost:3000/v1/realtime?sessionId=<session-id>
 ```
+
+## Note
+
+- For now, only the development database migration flow is wired into the backend setup.
+- The dedicated test database migration flow should be added together with the unit test setup.
