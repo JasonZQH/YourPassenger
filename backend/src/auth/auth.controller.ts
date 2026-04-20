@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 
-import { AppleAuthBody } from './auth.types';
+import { AppleAuthBody, AuthenticatedRequest } from './auth.types';
 import { AuthService } from './auth.service';
 
 @Controller()
@@ -18,7 +18,7 @@ export class AuthController {
   }
 
   @Get('me')
-  async getCurrentUser() {
-    return this.authService.getCurrentUser();
+  async getCurrentUser(@Req() request: AuthenticatedRequest) {
+    return this.authService.getCurrentUser(request);
   }
 }

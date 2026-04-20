@@ -4,12 +4,14 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import { IncomingMessage } from 'http';
 import { URL } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
 
+import { AuthService } from '../auth/auth.service';
 import { ConversationOrchestratorService } from '../conversation/conversation.service';
 import { ProfileService } from '../profile/profile.service';
 import { SessionsService } from '../sessions/sessions.service';
@@ -21,6 +23,7 @@ import {
 
 interface RealtimeConnection {
   socket: WebSocket;
+  userId: string;
   sessionId: string;
 }
 
@@ -33,6 +36,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
+    private readonly authService: AuthService,
     private readonly sessionsService: SessionsService,
     private readonly profileService: ProfileService,
     private readonly conversationOrchestrator: ConversationOrchestratorService,
@@ -45,37 +49,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     }
 
     this.wsServer.on('connection', (socket, request) => {
-      const sessionId = this.extractSessionId(request);
-      if (!sessionId) {
-        this.send(socket, {
-          type: 'error',
-          code: 'SESSION_ID_REQUIRED',
-          message: 'sessionId is required in the websocket query string.',
-        });
-        socket.close(1008, 'sessionId is required');
-        return;
-      }
-
-      this.connections.set(socket, { socket, sessionId });
-      this.logger.log(`Realtime client connected for session ${sessionId}`);
-
-      this.send(socket, {
-        type: 'session.ready',
-        sessionId,
-      });
-
-      this.send(socket, {
-        type: 'assistant.state',
-        state: 'idle',
-      });
-
-      socket.on('message', (data) => {
-        void this.handleMessage(socket, data);
-      });
-
-      socket.on('close', () => {
-        this.connections.delete(socket);
-      });
+      void this.handleConnection(socket, request);
     });
 
     this.upgradeHandler = (request, socket, head) => {
@@ -106,6 +80,67 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     this.wsServer.close();
   }
 
+  private async handleConnection(socket: WebSocket, request: IncomingMessage) {
+    const sessionId = this.extractSessionId(request);
+    if (!sessionId) {
+      this.send(socket, {
+        type: 'error',
+        code: 'SESSION_ID_REQUIRED',
+        message: 'sessionId is required in the websocket query string.',
+      });
+      socket.close(1008, 'sessionId is required');
+      return;
+    }
+
+    const accessToken = this.extractBearerToken(request.headers.authorization);
+    if (!accessToken) {
+      this.send(socket, {
+        type: 'error',
+        code: 'AUTH_REQUIRED',
+        message: 'Bearer token is required for realtime.',
+      });
+      socket.close(1008, 'bearer token is required');
+      return;
+    }
+
+    try {
+      const user = await this.authService.authenticateAccessToken(accessToken);
+      await this.sessionsService.getSession(user.id, sessionId);
+
+      this.connections.set(socket, { socket, userId: user.id, sessionId });
+      this.logger.log(`Realtime client connected for session ${sessionId}`);
+
+      this.send(socket, {
+        type: 'session.ready',
+        sessionId,
+      });
+
+      this.send(socket, {
+        type: 'assistant.state',
+        state: 'idle',
+      });
+
+      socket.on('message', (data) => {
+        void this.handleMessage(socket, data);
+      });
+
+      socket.on('close', () => {
+        this.connections.delete(socket);
+      });
+    } catch (error) {
+      const isUnauthorized = error instanceof UnauthorizedException;
+
+      this.send(socket, {
+        type: 'error',
+        code: isUnauthorized ? 'AUTH_INVALID' : 'SESSION_NOT_FOUND',
+        message: isUnauthorized
+          ? 'Realtime bearer token is invalid.'
+          : `Session ${sessionId} not found.`,
+      });
+      socket.close(1008, isUnauthorized ? 'invalid bearer token' : 'session not found');
+    }
+  }
+
   private async handleMessage(socket: WebSocket, raw: WebSocket.RawData) {
     const connection = this.connections.get(socket);
     if (!connection) {
@@ -128,17 +163,25 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     try {
       switch (parsed.type) {
         case 'audio.chunk':
-          await this.sessionsService.setAssistantState(connection.sessionId, 'listening');
+          await this.sessionsService.setAssistantState(
+            connection.userId,
+            connection.sessionId,
+            'listening',
+          );
           this.send(socket, {
             type: 'assistant.state',
             state: 'listening',
           });
           break;
         case 'audio.commit':
-          await this.handleAudioCommit(socket, connection.sessionId, parsed);
+          await this.handleAudioCommit(socket, connection.userId, connection.sessionId, parsed);
           break;
         case 'assistant.interrupt':
-          await this.sessionsService.setAssistantState(connection.sessionId, 'idle');
+          await this.sessionsService.setAssistantState(
+            connection.userId,
+            connection.sessionId,
+            'idle',
+          );
           this.send(socket, {
             type: 'assistant.interrupted',
             messageId: `msg_${Date.now()}`,
@@ -180,13 +223,14 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
 
   private async handleAudioCommit(
     socket: WebSocket,
+    userId: string,
     sessionId: string,
     event: ClientTextAudioCommitEvent,
   ) {
     const utterance = event.text?.trim() || 'Tell me something interesting for the road.';
 
-    await this.sessionsService.appendUserTurn(sessionId, utterance);
-    await this.sessionsService.setAssistantState(sessionId, 'thinking');
+    await this.sessionsService.appendUserTurn(userId, sessionId, utterance);
+    await this.sessionsService.setAssistantState(userId, sessionId, 'thinking');
 
     this.send(socket, {
       type: 'transcript.final',
@@ -201,11 +245,11 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
 
     const reply = this.conversationOrchestrator.buildAssistantReply({
       utterance,
-      profile: await this.profileService.getProfile(),
+      profile: await this.profileService.getProfile(userId),
     });
 
-    await this.sessionsService.appendAssistantTurn(sessionId, reply);
-    await this.sessionsService.setAssistantState(sessionId, 'speaking');
+    await this.sessionsService.appendAssistantTurn(userId, sessionId, reply);
+    await this.sessionsService.setAssistantState(userId, sessionId, 'speaking');
 
     this.send(socket, {
       type: 'assistant.text',
@@ -225,7 +269,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
       payload: '',
     });
 
-    await this.sessionsService.setAssistantState(sessionId, 'idle');
+    await this.sessionsService.setAssistantState(userId, sessionId, 'idle');
 
     this.send(socket, {
       type: 'assistant.state',
@@ -240,5 +284,21 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
   private extractSessionId(request: IncomingMessage): string | null {
     const url = new URL(request.url ?? '/', 'http://localhost');
     return url.searchParams.get('sessionId');
+  }
+
+  private extractBearerToken(authorizationHeader?: string | string[]): string | null {
+    const headerValue = Array.isArray(authorizationHeader)
+      ? authorizationHeader[0]
+      : authorizationHeader;
+    if (!headerValue) {
+      return null;
+    }
+
+    const [scheme, token] = headerValue.split(' ');
+    if (scheme?.toLowerCase() !== 'bearer' || !token) {
+      return null;
+    }
+
+    return token;
   }
 }

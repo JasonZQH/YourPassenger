@@ -20,6 +20,7 @@ enum BackendAPIError: LocalizedError {
 final class BackendAPIClient: APIClient {
     private enum Constants {
         static let tokenKey = "yourpassenger.dev.accessToken"
+        static let mockAppleIdentityTokenKey = "yourpassenger.dev.mockAppleIdentityToken"
         static let baseURL = "http://localhost:3000/v1"
     }
 
@@ -35,31 +36,40 @@ final class BackendAPIClient: APIClient {
     }
 
     func bootstrap() async throws -> BootstrapPayload {
-        // MVP rule: always land on auth first, regardless of any stored token.
-        print("[API] bootstrap: force auth screen for MVP")
-        return BootstrapPayload(isAuthenticated: false, profile: nil)
+        guard let token = storedToken else {
+            return BootstrapPayload(isAuthenticated: false, profile: nil)
+        }
+
+        do {
+            let me: MeResponse = try await request(path: "/me", token: token)
+            let profile: UserProfile? = try await requestOptional(path: "/profile", token: token)
+            print("[API] bootstrap:", me.id, me.nickname)
+            return BootstrapPayload(isAuthenticated: true, profile: profile)
+        } catch BackendAPIError.httpStatus(let status) where status == 401 {
+            storedToken = nil
+            print("[API] bootstrap: cleared expired token")
+            return BootstrapPayload(isAuthenticated: false, profile: nil)
+        }
     }
 
     func signIn(method: AuthMethod) async throws -> BootstrapPayload {
-        // MVP rule: do not validate credentials yet; login button always proceeds.
-        // Keep a local token so downstream APIs can run as usual.
-        storedToken = "dev-local-token"
-
-        let profile: UserProfile?
-        do {
-            profile = try await requestOptional(path: "/profile", token: storedToken)
-        } catch {
-            // Profile fetch failure should not block login during MVP.
-            print("[API] signIn: profile fetch skipped due error:", error.localizedDescription)
-            profile = nil
-        }
+        let response: AuthResponse
 
         switch method {
         case .apple:
-            print("[API] signIn bypass: apple")
+            response = try await request(
+                path: "/auth/apple",
+                method: "POST",
+                body: AppleAuthBody(identityToken: mockAppleIdentityToken),
+                token: nil
+            )
         case .guest:
-            print("[API] signIn bypass: guest")
+            response = try await request(path: "/auth/guest", method: "POST", token: nil)
         }
+
+        storedToken = response.accessToken
+        let profile: UserProfile? = try await requestOptional(path: "/profile", token: response.accessToken)
+        print("[API] signIn:", response.user.id, response.user.nickname)
 
         return BootstrapPayload(isAuthenticated: true, profile: profile)
     }
@@ -139,6 +149,17 @@ final class BackendAPIClient: APIClient {
     private var storedToken: String? {
         get { UserDefaults.standard.string(forKey: Constants.tokenKey) }
         set { UserDefaults.standard.set(newValue, forKey: Constants.tokenKey) }
+    }
+
+    private var mockAppleIdentityToken: String {
+        if let stored = UserDefaults.standard.string(forKey: Constants.mockAppleIdentityTokenKey),
+           !stored.isEmpty {
+            return stored
+        }
+
+        let generated = "ios-dev-apple-\(UUID().uuidString.lowercased())"
+        UserDefaults.standard.set(generated, forKey: Constants.mockAppleIdentityTokenKey)
+        return generated
     }
 
     private func request<Response: Decodable>(
