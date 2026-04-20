@@ -2,45 +2,52 @@
 
 ## Goal
 
-This document defines a practical database workflow for this project across:
+This document defines the current database workflow for this project across:
 
 - local development
 - branch collaboration and merge
 - CI checks
-- Kubernetes deployment
+- production deployment
 - future scaling and reliability evolution
 
-It is based on the current backend direction: NestJS service modules, PostgreSQL as the source of truth, and Prisma for data access and migration management.
+It is based on the current backend implementation: NestJS modules, PostgreSQL as the source of truth, Prisma for data access and migrations, and `@nestjs/config` for runtime environment loading.
 
 ## Scope
 
 This playbook applies to:
 
-- schema definition and evolution in `prisma/schema.prisma`
-- migration files in `prisma/migrations/*`
-- environment isolation for `dev`, `test`, `prod`
+- schema definition in `backend/prisma/schema.prisma`
+- migration files in `backend/prisma/migrations/*`
+- local environment files in `backend/.env` and `backend/.env.local`
 
 This playbook does not include:
 
 - analytics warehouse design
 - vector DB / retrieval memory design
 
+## Current Repo Facts
+
+- Prisma reads the datasource URL from `DATABASE_URL`.
+- Nest loads `.env.local` and `.env` through `@nestjs/config`.
+- `DATABASE_URL_TEST` exists in `.env.example` as a reserved value for future test tooling, but the current Prisma schema does not read it directly.
+- To point Prisma at a different database today, override `DATABASE_URL` for that command.
+
 ## Core Principles
 
 1. PostgreSQL is the primary source of truth for product data.
-2. Prisma schema and migrations are first-class code artifacts and must be versioned.
-3. Every engineer uses an isolated development database.
+2. Prisma schema and migrations are versioned code artifacts.
+3. Every engineer should use an isolated development database.
 4. Automated tests must never share the development database.
-5. Production only runs `prisma migrate deploy`, never `prisma migrate dev`.
+5. Production should run `prisma migrate deploy`, never `prisma migrate dev`.
 6. Prefer expand-contract migrations for zero-downtime releases.
 
 ## Environment Strategy
 
-| Environment | DB Isolation | Migration Command | Reset Policy |
-| --- | --- | --- | --- |
-| `dev` | per developer database | `prisma migrate dev` | optional manual reset |
-| `test` | per developer or ephemeral CI database | `prisma migrate deploy` (or reset + deploy) | reset before test suite |
-| `prod` | shared production cluster | `prisma migrate deploy` | never reset |
+| Environment | DB Isolation | Source of Env Values | Migration Command | Reset Policy |
+| --- | --- | --- | --- | --- |
+| `dev` | per developer database | `.env.local` or `.env` | `npm run prisma:migrate:dev -- --name <change>` | optional manual reset |
+| `test` | per developer or ephemeral CI database | exported `DATABASE_URL` for the command or future dedicated env file | `npm run prisma:migrate:deploy` | reset before test suite |
+| `prod` | shared production cluster | platform-injected env vars | `npm run prisma:migrate:deploy` | never reset |
 
 Recommended naming:
 
@@ -48,23 +55,30 @@ Recommended naming:
 - `yourpassenger_test_<username>`
 - `yourpassenger_prod`
 
-## One-Time Setup
+## One-Time Local Setup
 
-1. Install dependencies.
-2. Initialize Prisma with PostgreSQL.
-3. Create isolated local databases.
-4. Configure `.env` and `.env.test`.
-5. Run first migration.
+1. Install backend dependencies.
+2. Copy `backend/.env.example` to `backend/.env` or create a private `backend/.env.local`.
+3. Fill in `DATABASE_URL` and `AUTH_TOKEN_SECRET` with local values.
+4. Generate the Prisma client.
+5. Apply migrations.
+6. Start the backend.
 
 Example commands:
 
 ```bash
 cd backend
-npm i @prisma/client
-npm i -D prisma dotenv-cli
-npx prisma init --datasource-provider postgresql
-npx prisma migrate dev --name init
+npm install
+cp .env.example .env
+npm run prisma:generate
+npm run prisma:migrate:dev -- --name init
+npm run start:dev
 ```
+
+Notes:
+
+- `npm run prisma:migrate:dev -- --name init` is only for a fresh local database. For later changes, replace `init` with the actual migration name.
+- Prefer `.env.local` for machine-specific overrides that should never be committed.
 
 ## Day-to-Day Schema Update Workflow
 
@@ -85,7 +99,7 @@ npx prisma migrate dev --name init
             |
             v
 +--------------------------+
-| Run tests and local app |
+| Run app and verification |
 +--------------------------+
             |
             v
@@ -102,11 +116,6 @@ npx prisma migrate dev --name init
 +-----------------------------------+
 | CI validate + migration checks    |
 +-----------------------------------+
-            |
-            v
-      +-----------+
-      | pass ?    |
-      +-----------+
             |
            yes
             |
@@ -131,65 +140,64 @@ npx prisma migrate dev --name init
 +------------------+
 ```
 
+The repo-level command form should be:
+
+```bash
+cd backend
+npm run prisma:migrate:dev -- --name <change_name>
+```
+
 ## Branch Merge and Migration Conflict Rules
 
 1. Never modify committed historical migration files.
-2. If `schema.prisma` conflicts, resolve schema first.
-3. After rebase/merge, generate a new reconciliation migration if needed.
-4. Commit both schema and newly generated migration in the same PR.
+2. If `schema.prisma` conflicts, resolve the schema first.
+3. After rebase or merge, generate a new reconciliation migration if needed.
+4. Commit both schema and the new migration in the same PR.
 
 Example reconciliation command:
 
 ```bash
-npx prisma migrate dev --name reconcile_after_rebase
+cd backend
+npm run prisma:migrate:dev -- --name reconcile_after_rebase
 ```
 
 ## Local Startup and Test Data Isolation
 
-To avoid polluting development data with test login/session payloads:
+To avoid polluting development data with test payloads:
 
-1. run app locally against `DATABASE_URL` (dev DB)
-2. run tests against `DATABASE_URL_TEST` (test DB)
-3. reset test DB before each test run or test suite
-4. do not point local app runtime to test DB
+1. run the app locally against `DATABASE_URL`
+2. use a separate database for tests
+3. reset the test DB before each full test run
+4. never point normal app runtime at the test DB
 
-Recommended test reset command:
+Today, because Prisma only reads `DATABASE_URL`, a test-db command should override that value explicitly.
+
+Example:
 
 ```bash
-dotenv -e .env.test -- npx prisma migrate reset --force --skip-seed
+cd backend
+DATABASE_URL="postgresql://db_user:db_password@localhost:5432/yourpassenger_test?schema=public" \
+  npm run prisma:migrate:deploy
 ```
 
-## Makefile / CI Checks
+The same pattern applies to `prisma migrate reset`, `prisma db push`, or other one-off Prisma commands.
 
-Use these checks as required CI gates:
+## Current CI-Friendly Checks
 
-```makefile
-prisma-validate:
-	npx prisma validate
-	npx prisma format --check
+These checks match the current repo state:
 
-migration-status:
-	npx prisma migrate status
-
-migration-diff-check:
-	npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --exit-code
-
-test-db-prepare:
-	dotenv -e .env.test -- npx prisma migrate reset --force --skip-seed
-	dotenv -e .env.test -- npx prisma migrate deploy
+```bash
+cd backend
+npx prisma validate
+npx prisma format --check
+npx prisma migrate status
+npm run typecheck
+npm run build
 ```
 
-Recommended CI behavior:
+## Production Release Workflow
 
-1. run `prisma-validate`
-2. run `migration-status`
-3. run `migration-diff-check`
-4. run migration apply on a clean temporary DB
-5. run backend tests
-
-## Kubernetes Release Workflow
-
-Use a dedicated migration job before app rollout.
+Use a dedicated migration step before app rollout.
 
 ```text
 +---------------+      +------------------------+      +---------------------------+
@@ -211,17 +219,17 @@ Operational rules:
 
 1. migration job image version must match app image version
 2. migration job must be idempotent (`prisma migrate deploy`)
-3. app deployment proceeds only after migration job success
+3. app deployment proceeds only after migration success
 4. failed migration blocks rollout
 
 ## Zero-Downtime Migration Pattern (Expand-Contract)
 
 When changing critical fields:
 
-1. Expand: add new nullable column/table/index.
-2. Dual write: app writes old + new shape.
+1. Expand: add new nullable column, table, or index.
+2. Dual write: app writes old and new shapes.
 3. Backfill: migrate historical rows in batches.
-4. Cutover: app reads new shape only.
+4. Cutover: app reads the new shape only.
 5. Contract: remove old shape in a later release.
 
 Avoid destructive one-step schema changes on hot paths.
@@ -229,49 +237,33 @@ Avoid destructive one-step schema changes on hot paths.
 ## Rollback and Recovery Strategy
 
 1. Prefer forward-fix over rollback migration scripts.
-2. Keep regular Postgres backups and tested restore procedure.
+2. Keep regular Postgres backups and a tested restore procedure.
 3. Define RPO/RTO targets per environment.
-4. For failed production release:
-   1. stop rollout
-   2. assess migration impact
-   3. apply forward-fix migration or restore per runbook
+4. For a failed production release:
+   - stop rollout
+   - assess migration impact
+   - apply a forward-fix migration or restore per runbook
 
-## Future Considerations and Analysis
+## Future Considerations
 
-### 1) Service extraction readiness
+### Service extraction readiness
 
-- current monolith can keep one primary Postgres
-- when splitting ASR/LLM/TTS services, keep session/profile ownership clear
-- consider `outbox_events` table for reliable event publishing to NATS/Kafka
+- the current monolith can keep one primary Postgres
+- when splitting ASR, LLM, or TTS services, keep session and profile ownership clear
+- consider an `outbox_events` table for reliable event publishing to NATS or Kafka
 
-### 2) Realtime scale
+### Realtime scale
 
-- `sessions` and `session_turns` will grow fast
-- add indexes by `(session_id, created_at)` and `(user_id, started_at)`
-- for heavy volume, consider table partitioning by time for `session_turns`
+- `sessions` and `session_turns` will grow quickly
+- keep indexes on `(session_id, created_at)` and `(user_id, started_at)`
+- consider table partitioning for `session_turns` at higher volume
 
-### 3) Data lifecycle and cost
+### Data lifecycle and cost
 
 - define retention policy for raw turns and summaries
-- move long-term analytics out of OLTP Postgres into warehouse pipeline
+- move long-term analytics out of OLTP Postgres into a warehouse pipeline
 
-### 4) Privacy and compliance
+### Privacy and compliance
 
 - classify PII fields early
-- apply encryption at rest + TLS in transit
-- define deletion/anonymization workflow for user data requests
-
-### 5) Observability
-
-- track migration duration/failures
-- track DB connection pool saturation and slow queries
-- add release annotation linking app version to migration version
-
-## Release Checklist
-
-1. schema change reviewed
-2. migration generated and committed
-3. CI migration checks passed
-4. migration tested on clean DB
-5. K8s migration job configured
-6. rollback/recovery path confirmed
+- keep raw conversation retention explicit and reviewable
