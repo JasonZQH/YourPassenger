@@ -19,8 +19,9 @@ This directory contains the minimal NestJS backend skeleton for the AI Passenger
 ## Notes
 
 - This version uses PostgreSQL persistence through Prisma.
-- Auth tokens are still mock tokens for MVP.
+- Auth tokens are still mock tokens for MVP, but they are signed and required on protected routes.
 - The realtime server is a raw WebSocket mock conversation path to support client integration before the full agentic chain exists.
+- Environment variables are loaded by Nest through `@nestjs/config`, using `.env.local` and `.env`.
 
 ## Run
 
@@ -28,7 +29,7 @@ This directory contains the minimal NestJS backend skeleton for the AI Passenger
 cd backend
 npm install
 npm run prisma:generate
-# configure DATABASE_URL in .env
+# configure DATABASE_URL and AUTH_TOKEN_SECRET in .env
 npm run prisma:migrate:dev -- --name init
 npm run start:dev
 ```
@@ -44,6 +45,12 @@ Realtime WebSocket:
 ```text
 ws://localhost:3000/v1/realtime?sessionId=<session-id>
 ```
+
+Protected route flow:
+
+- `POST /v1/auth/apple` or `POST /v1/auth/guest`
+- Store the returned `accessToken`
+- Send `Authorization: Bearer <accessToken>` on `/v1/me`, `/v1/profile`, `/v1/sessions/*`, and the realtime websocket handshake
 
 ## Note
 

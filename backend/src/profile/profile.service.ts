@@ -1,23 +1,18 @@
 import { Injectable } from '@nestjs/common';
 
-import { AuthService } from '../auth/auth.service';
 import { UpdateProfileBody } from './profile.types';
 import { StoreService } from '../store/store.service';
 
 @Injectable()
 export class ProfileService {
-  constructor(
-    private readonly authService: AuthService,
-    private readonly store: StoreService,
-  ) {}
+  constructor(private readonly store: StoreService) {}
 
-  async getProfile() {
-    const user = await this.authService.getCurrentUser();
-    return this.store.getProfile(user.id);
+  async getProfile(userId: string) {
+    return this.store.getProfile(userId);
   }
 
-  async updateProfile(body: UpdateProfileBody) {
-    await this.store.saveProfile(body);
+  async updateProfile(userId: string, body: UpdateProfileBody) {
+    await this.store.saveProfile(userId, body);
     return {
       success: true,
       profileCompleted: true,

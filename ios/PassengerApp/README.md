@@ -4,8 +4,8 @@ This folder contains the active Xcode project for the SwiftUI MVP client.
 
 Source of truth:
 
-- [PassengerClient.xcodeproj](/Users/zqh980802/Desktop/AI/YourPassenger/ios/PassengerApp/PassengerClient/PassengerClient.xcodeproj)
-- [PassengerClient sources](/Users/zqh980802/Desktop/AI/YourPassenger/ios/PassengerApp/PassengerClient/PassengerClient)
+- [PassengerClient.xcodeproj](/Users/mydev/Desktop/YourPassenger/ios/PassengerApp/PassengerClient/PassengerClient.xcodeproj)
+- [PassengerClient sources](/Users/mydev/Desktop/YourPassenger/ios/PassengerApp/PassengerClient/PassengerClient)
 
 Current scope:
 

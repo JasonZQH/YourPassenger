@@ -1,5 +1,5 @@
+import { createHash, randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 
 import {
@@ -10,63 +10,53 @@ import {
 } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 
-type AuthKind = 'apple' | 'guest';
-
 @Injectable()
 export class StoreService {
-  private currentUserId: string | null = null;
-
   constructor(private readonly prisma: PrismaService) {}
 
-  async signIn(kind: AuthKind): Promise<AuthUser> {
-    const identity =
-      kind === 'apple'
-        ? { userId: 'usr_demo', providerUserId: 'apple_demo', nickname: 'Rider' }
-        : { userId: 'guest_demo', providerUserId: 'guest_demo', nickname: 'Guest' };
-
+  async signInWithApple(identityToken: string): Promise<AuthUser> {
+    const providerUserId = this.hashAppleIdentityToken(identityToken);
     const user = await this.prisma.user.upsert({
       where: {
         authKind_providerUserId: {
-          authKind: kind,
-          providerUserId: identity.providerUserId,
+          authKind: 'apple',
+          providerUserId,
         },
       },
       update: {},
       create: {
-        id: identity.userId,
-        authKind: kind,
-        providerUserId: identity.providerUserId,
-        nickname: identity.nickname,
+        id: `usr_${randomUUID()}`,
+        authKind: 'apple',
+        providerUserId,
+        nickname: 'Rider',
       },
     });
 
-    this.currentUserId = user.id;
-    return {
-      id: user.id,
-      nickname: user.nickname,
-      profileCompleted: user.profileCompleted,
-    };
+    return this.toAuthUser(user);
   }
 
-  async getCurrentUser(): Promise<AuthUser> {
-    if (!this.currentUserId) {
-      return this.signIn('guest');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: this.currentUserId },
+  async createGuestUser(): Promise<AuthUser> {
+    const user = await this.prisma.user.create({
+      data: {
+        id: `usr_${randomUUID()}`,
+        authKind: 'guest',
+        providerUserId: `guest_${randomUUID()}`,
+        nickname: 'Guest',
+      },
     });
 
+    return this.toAuthUser(user);
+  }
+
+  async getUser(userId: string): Promise<AuthUser | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
     if (!user) {
-      this.currentUserId = null;
-      return this.signIn('guest');
+      return null;
     }
 
-    return {
-      id: user.id,
-      nickname: user.nickname,
-      profileCompleted: user.profileCompleted,
-    };
+    return this.toAuthUser(user);
   }
 
   async getProfile(userId: string): Promise<UserProfile | null> {
@@ -81,12 +71,13 @@ export class StoreService {
     return this.toUserProfile(profile);
   }
 
-  async saveProfile(profile: Omit<UserProfile, 'userId' | 'updatedAt'>): Promise<UserProfile> {
-    const user = await this.getCurrentUser();
-
+  async saveProfile(
+    userId: string,
+    profile: Omit<UserProfile, 'userId' | 'updatedAt'>,
+  ): Promise<UserProfile> {
     const savedProfile = await this.prisma.$transaction(async (tx) => {
       const upserted = await tx.userProfile.upsert({
-        where: { userId: user.id },
+        where: { userId },
         update: {
           nickname: profile.nickname,
           interests: [...profile.interests],
@@ -101,7 +92,7 @@ export class StoreService {
           avoidTopicTags: [...profile.avoidTopicTags],
         },
         create: {
-          userId: user.id,
+          userId,
           nickname: profile.nickname,
           interests: [...profile.interests],
           ageRange: profile.ageRange,
@@ -117,7 +108,7 @@ export class StoreService {
       });
 
       await tx.user.update({
-        where: { id: user.id },
+        where: { id: userId },
         data: {
           nickname: profile.nickname,
           profileCompleted: true,
@@ -130,13 +121,11 @@ export class StoreService {
     return this.toUserProfile(savedProfile);
   }
 
-  async createSession(): Promise<SessionRecord> {
-    const user = await this.getCurrentUser();
-
+  async createSession(userId: string): Promise<SessionRecord> {
     const created = await this.prisma.session.create({
       data: {
         id: `ses_${randomUUID()}`,
-        userId: user.id,
+        userId,
       },
       include: {
         turns: {
@@ -148,16 +137,8 @@ export class StoreService {
     return this.toSessionRecord(created);
   }
 
-  async getSession(sessionId: string): Promise<SessionRecord | null> {
-    const session = await this.prisma.session.findUnique({
-      where: { id: sessionId },
-      include: {
-        turns: {
-          orderBy: { turnIndex: 'asc' },
-        },
-      },
-    });
-
+  async getSession(userId: string, sessionId: string): Promise<SessionRecord | null> {
+    const session = await this.findOwnedSession(userId, sessionId);
     if (!session) {
       return null;
     }
@@ -166,32 +147,51 @@ export class StoreService {
   }
 
   async updateAssistantState(
+    userId: string,
     sessionId: string,
     state: SessionRecord['latestAssistantState'],
   ): Promise<SessionRecord | null> {
-    try {
-      await this.prisma.session.update({
-        where: { id: sessionId },
-        data: { latestAssistantState: state },
-      });
-    } catch (error) {
-      if (this.isRecordNotFound(error)) {
-        return null;
-      }
-
-      throw error;
+    const ownedSession = await this.prisma.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+      },
+      select: { id: true },
+    });
+    if (!ownedSession) {
+      return null;
     }
 
-    return this.getSession(sessionId);
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { latestAssistantState: state },
+    });
+
+    return this.getSession(userId, sessionId);
   }
 
   async appendTurn(
+    userId: string,
     sessionId: string,
     role: 'user' | 'assistant',
     text: string,
   ): Promise<SessionRecord | null> {
+    let ownsSession = true;
+
     try {
       await this.prisma.$transaction(async (tx) => {
+        const ownedSession = await tx.session.findFirst({
+          where: {
+            id: sessionId,
+            userId,
+          },
+          select: { id: true },
+        });
+        if (!ownedSession) {
+          ownsSession = false;
+          return;
+        }
+
         const updatedSession = await tx.session.update({
           where: { id: sessionId },
           data: {
@@ -214,61 +214,89 @@ export class StoreService {
         });
       });
     } catch (error) {
-      if (this.isRecordNotFound(error) || this.isForeignKeyViolation(error)) {
+      if (this.isForeignKeyViolation(error)) {
         return null;
       }
 
       throw error;
     }
 
-    return this.getSession(sessionId);
+    if (!ownsSession) {
+      return null;
+    }
+
+    return this.getSession(userId, sessionId);
   }
 
-  async endSession(sessionId: string, summary: SessionSummary): Promise<SessionRecord | null> {
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.session.update({
-          where: { id: sessionId },
-          data: {
-            status: 'ended',
-            endedAt: new Date(),
-            latestAssistantState: 'idle',
-          },
-        });
+  async endSession(
+    userId: string,
+    sessionId: string,
+    summary: SessionSummary,
+  ): Promise<SessionRecord | null> {
+    let ownsSession = true;
 
-        await tx.sessionSummary.upsert({
-          where: { sessionId },
-          update: {
-            durationSeconds: summary.durationSeconds,
-            summary: summary.summary,
-            topics: summary.topics,
-            memoryCandidates: summary.memoryCandidates,
-          },
-          create: {
-            sessionId,
-            durationSeconds: summary.durationSeconds,
-            summary: summary.summary,
-            topics: summary.topics,
-            memoryCandidates: summary.memoryCandidates,
-          },
-        });
+    await this.prisma.$transaction(async (tx) => {
+      const ownedSession = await tx.session.findFirst({
+        where: {
+          id: sessionId,
+          userId,
+        },
+        select: { id: true },
       });
-    } catch (error) {
-      if (this.isRecordNotFound(error)) {
-        return null;
+      if (!ownedSession) {
+        ownsSession = false;
+        return;
       }
 
-      throw error;
+      await tx.session.update({
+        where: { id: sessionId },
+        data: {
+          status: 'ended',
+          endedAt: new Date(),
+          latestAssistantState: 'idle',
+        },
+      });
+
+      await tx.sessionSummary.upsert({
+        where: { sessionId },
+        update: {
+          durationSeconds: summary.durationSeconds,
+          summary: summary.summary,
+          topics: summary.topics,
+          memoryCandidates: summary.memoryCandidates,
+        },
+        create: {
+          sessionId,
+          durationSeconds: summary.durationSeconds,
+          summary: summary.summary,
+          topics: summary.topics,
+          memoryCandidates: summary.memoryCandidates,
+        },
+      });
+    });
+
+    if (!ownsSession) {
+      return null;
     }
 
-    return this.getSession(sessionId);
+    return this.getSession(userId, sessionId);
   }
 
-  async getSummary(sessionId: string): Promise<SessionSummary | null> {
+  async getSummary(userId: string, sessionId: string): Promise<SessionSummary | null> {
+    const session = await this.prisma.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+      },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
     const summary = await this.prisma.sessionSummary.findUnique({
       where: { sessionId },
     });
-
     if (!summary) {
       return null;
     }
@@ -279,6 +307,50 @@ export class StoreService {
       summary: summary.summary,
       topics: summary.topics,
       memoryCandidates: summary.memoryCandidates,
+    };
+  }
+
+  private async findOwnedSession(userId: string, sessionId: string) {
+    return this.prisma.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+      },
+      include: {
+        turns: {
+          orderBy: { turnIndex: 'asc' },
+        },
+      },
+    });
+  }
+
+  private hashAppleIdentityToken(identityToken: string): string {
+    const jwtPayload = identityToken.split('.')[1];
+    if (jwtPayload) {
+      try {
+        const parsedPayload = JSON.parse(
+          Buffer.from(jwtPayload, 'base64url').toString('utf8'),
+        ) as { sub?: string };
+        if (parsedPayload.sub) {
+          return parsedPayload.sub;
+        }
+      } catch {
+        // Fall through to hashing the opaque token for local mock flows.
+      }
+    }
+
+    return createHash('sha256').update(identityToken).digest('hex');
+  }
+
+  private toAuthUser(user: {
+    id: string;
+    nickname: string;
+    profileCompleted: boolean;
+  }): AuthUser {
+    return {
+      id: user.id,
+      nickname: user.nickname,
+      profileCompleted: user.profileCompleted,
     };
   }
 
@@ -339,13 +411,6 @@ export class StoreService {
         createdAt: turn.createdAt.toISOString(),
       })),
     };
-  }
-
-  private isRecordNotFound(error: unknown): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2025'
-    );
   }
 
   private isForeignKeyViolation(error: unknown): boolean {
