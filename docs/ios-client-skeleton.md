@@ -1,36 +1,17 @@
-# iOS Client Skeleton
+# iOS Client Notes
 
-## Design Direction
+## Current Runtime Mode
 
-The local `awesome-design-md` submodule is now available at:
+The iOS app is no longer running against a mock backend by default.
 
-- [references/awesome-design-md](/Users/zqh980802/Desktop/AI/YourPassenger/references/awesome-design-md)
+Current default path:
 
-The local markdown files mostly act as entry points to external design pages, so the practical design direction for the MVP is based on the high-level cues from those references:
+- `PassengerClientApp` bootstraps with `BackendAPIClient`
+- `BackendAPIClient` targets `http://localhost:3000/v1`
+- realtime uses `RealtimeWebSocketClient`
+- the public backend entrypoint is `app-server`
 
-- Apple: premium white space and clarity
-- Uber: strong mobility-oriented primary actions
-- Claude: warm AI-oriented editorial tone
-
-For this app, the resulting direction should be:
-
-- light theme first
-- warm off-white canvas instead of stark white
-- graphite text and surfaces
-- a restrained amber accent for AI warmth
-- one dominant action on each screen
-- large tap targets and low visual clutter
-
-This is a better fit than a dark immersive UI because the MVP is centered on driving-safe readability and fast orientation.
-
-## Screen Stack
-
-1. `AuthView`
-2. `OnboardingView`
-3. `HomeView`
-4. `ProfileView`
-5. `LiveChatView`
-6. `SessionSummaryView`
+`MockAPIClient` still exists in the source tree as a fallback scaffold, but it is not the active app path.
 
 ## App Structure
 
@@ -46,19 +27,107 @@ ios/PassengerApp/
       Views/
 ```
 
+Important files:
+
+- `PassengerClientApp.swift`: app entry
+- `App/AppViewModel.swift`: root navigation and app-level state
+- `Services/BackendAPIClient.swift`: REST client
+- `Services/RealtimeWebSocketClient.swift`: websocket client
+- `Views/*`: screen implementations
+
 Source of truth:
 
-- Only update files inside `ios/PassengerApp/PassengerClient/PassengerClient`
-- Do not keep parallel Swift source files in `ios/PassengerApp` root
+- keep Swift source changes inside `ios/PassengerApp/PassengerClient/PassengerClient`
+- do not create parallel Swift source outside the Xcode project tree
 
-## State Strategy
+## Current Screen Flow
 
-- `AppViewModel` owns root navigation and app-level state
-- `MockAPIClient` stands in for NestJS during UI skeleton work
-- `ChatViewModel` simulates live conversation states for the voice screen
+1. `AuthView`
+2. `OnboardingView`
+3. `PassengerNamingView`
+4. `HomeView`
+5. `ProfileView`
+6. `LiveChatView`
+7. `SessionSummaryView`
 
-## Next Build Order
+App-level routing currently lives in `AppViewModel`.
 
-1. Keep the mock client in place until the NestJS auth, profile, and session APIs exist.
-2. Replace the mock client with real REST and WebSocket adapters without changing the view layer contracts.
-3. Continue all iOS work inside the Xcode project source tree only.
+## Client State Strategy
+
+`AppViewModel` owns:
+
+- bootstrap state
+- authentication state
+- current profile
+- active chat session
+- latest session summary
+- error and busy flags
+
+The current startup sequence is:
+
+1. restore local access token from `UserDefaults`
+2. call `GET /v1/me`
+3. call `GET /v1/profile`
+4. route to `Auth`, `Onboarding`, or `Home`
+
+## REST Contract Used By iOS
+
+The iOS client currently calls these public routes on `app-server`:
+
+- `POST /v1/auth/apple`
+- `POST /v1/auth/guest`
+- `GET /v1/me`
+- `GET /v1/profile`
+- `PUT /v1/profile`
+- `POST /v1/sessions`
+- `POST /v1/sessions/:id/end`
+- `GET /v1/sessions/:id/summary`
+
+Behavior details:
+
+- `Continue with Apple` currently sends a persisted local mock identity token
+- `Continue as Guest` creates a new guest identity
+- profile load treats empty body or `null` as “profile not created yet”
+- `POST /v1/sessions` returns both session metadata and the websocket URL/token payload
+
+## Realtime Contract Used By iOS
+
+The live chat screen connects to:
+
+- `GET ws://localhost:3000/v1/realtime?sessionId=<sessionId>` with `Authorization: Bearer <accessToken>`
+
+Client-sent events:
+
+- `audio.commit`
+- `assistant.interrupt`
+
+Server events currently consumed by `RealtimeWebSocketClient`:
+
+- `session.ready`
+- `transcript.final`
+- `assistant.state`
+- `assistant.text`
+- `assistant.audio`
+- `assistant.interrupted`
+- `pong`
+- `error`
+
+## Local Development Assumptions
+
+- `localhost:3000` is correct for iOS Simulator
+- a real device would need the Mac host IP, not `localhost`
+- backend services should be started with `make local-up` before running the app
+
+Recommended loop:
+
+1. `npm install`
+2. `make local-up`
+3. run the Xcode project on Simulator
+4. use `make local-down` when finished
+
+## Current Known Limitations
+
+- Apple Sign In is still a local mock identity flow, not the system Apple auth sheet
+- assistant audio events currently send an empty payload placeholder
+- the realtime path is still text-driven (`audio.commit` with text), not real microphone streaming
+- `PassengerNamingView` currently stores local presentation state, not backend profile data

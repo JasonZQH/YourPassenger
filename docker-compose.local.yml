@@ -1,0 +1,131 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: yourpassenger-local-postgres
+    environment:
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-db_user}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-db_password}
+      POSTGRES_DB: postgres
+    ports:
+      - "${DOCKER_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-db_user} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - yourpassenger-local-postgres:/var/lib/postgresql/data
+
+  auth-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/auth-service"]
+    environment:
+      AUTH_SERVICE_PORT: "3101"
+      AUTH_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-db_user}:${LOCAL_POSTGRES_PASSWORD:-db_password}@postgres:5432/yourpassenger_auth?schema=public"
+      AUTH_TOKEN_SECRET: "${AUTH_TOKEN_SECRET}"
+    ports:
+      - "${AUTH_SERVICE_PORT:-3101}:3101"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  profile-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/profile-service"]
+    environment:
+      PROFILE_SERVICE_PORT: "3102"
+      PROFILE_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-db_user}:${LOCAL_POSTGRES_PASSWORD:-db_password}@postgres:5432/yourpassenger_profile?schema=public"
+    ports:
+      - "${PROFILE_SERVICE_PORT:-3102}:3102"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3102/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  session-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/session-service"]
+    environment:
+      SESSION_SERVICE_PORT: "3103"
+      SESSION_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-db_user}:${LOCAL_POSTGRES_PASSWORD:-db_password}@postgres:5432/yourpassenger_session?schema=public"
+    ports:
+      - "${SESSION_SERVICE_PORT:-3103}:3103"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3103/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  conversation-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/conversation-service"]
+    environment:
+      CONVERSATION_SERVICE_PORT: "3104"
+      LLM_PROVIDER: "${LLM_PROVIDER:-mock}"
+      TTS_PROVIDER: "${TTS_PROVIDER:-mock}"
+      ASR_PROVIDER: "${ASR_PROVIDER:-mock}"
+    ports:
+      - "${CONVERSATION_SERVICE_PORT:-3104}:3104"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3104/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app-server:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/app-server"]
+    environment:
+      APP_SERVER_PORT: "3000"
+      AUTH_TOKEN_SECRET: "${AUTH_TOKEN_SECRET}"
+      AUTH_SERVICE_BASE_URL: "http://auth-service:3101"
+      PROFILE_SERVICE_BASE_URL: "http://profile-service:3102"
+      SESSION_SERVICE_BASE_URL: "http://session-service:3103"
+      CONVERSATION_SERVICE_BASE_URL: "http://conversation-service:3104"
+      PUBLIC_WS_BASE_URL: "${PUBLIC_WS_BASE_URL:-ws://localhost:${APP_SERVER_PORT:-3000}}"
+    ports:
+      - "${APP_SERVER_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      profile-service:
+        condition: service_healthy
+      session-service:
+        condition: service_healthy
+      conversation-service:
+        condition: service_healthy
+
+volumes:
+  yourpassenger-local-postgres:

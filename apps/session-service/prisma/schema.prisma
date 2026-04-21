@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("SESSION_DATABASE_URL")
+}
+
+enum SessionStatus {
+  active
+  ended
+}
+
+enum AssistantState {
+  idle
+  listening
+  thinking
+  speaking
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+model Session {
+  id                   String         @id
+  userId               String
+  status               SessionStatus  @default(active)
+  startedAt            DateTime       @default(now())
+  endedAt              DateTime?
+  latestAssistantState AssistantState @default(idle)
+  turnCount            Int            @default(0)
+
+  turns   SessionTurn[]
+  summary SessionSummary?
+
+  @@index([userId, startedAt(sort: Desc)])
+}
+
+model SessionTurn {
+  id        String      @id @default(cuid())
+  sessionId String
+  turnIndex Int
+  role      MessageRole
+  text      String
+  createdAt DateTime    @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, turnIndex])
+  @@index([sessionId, turnIndex])
+  @@index([sessionId, createdAt])
+}
+
+model SessionSummary {
+  sessionId        String   @id
+  durationSeconds  Int
+  summary          String
+  topics           String[] @default([])
+  memoryCandidates String[] @default([])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}

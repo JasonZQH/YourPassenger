@@ -1,277 +1,205 @@
-# Database Creation and Update Playbook (Prisma + PostgreSQL)
+# Database Creation and Update Playbook
 
 ## Goal
 
-This document defines a practical database workflow for this project across:
+This document defines the current database workflow for the split local service architecture.
+
+It covers:
 
 - local development
-- branch collaboration and merge
-- CI checks
-- Kubernetes deployment
-- future scaling and reliability evolution
+- schema changes per service
+- migration ownership
+- deploy-safe migration rules
+- branch and CI expectations
 
-It is based on the current backend direction: NestJS service modules, PostgreSQL as the source of truth, and Prisma for data access and migration management.
-
-## Scope
-
-This playbook applies to:
-
-- schema definition and evolution in `prisma/schema.prisma`
-- migration files in `prisma/migrations/*`
-- environment isolation for `dev`, `test`, `prod`
-
-This playbook does not include:
+It does not cover:
 
 - analytics warehouse design
 - vector DB / retrieval memory design
+- long-term multi-region data topology
+
+## Current Database Topology
+
+The project currently uses one local PostgreSQL instance with three service-owned logical databases.
+
+| Service | Env Var | Default Local DB | Prisma Schema Path | Owns |
+| --- | --- | --- | --- | --- |
+| `auth-service` | `AUTH_DATABASE_URL` | `yourpassenger_auth` | `apps/auth-service/prisma/schema.prisma` | auth identities |
+| `profile-service` | `PROFILE_DATABASE_URL` | `yourpassenger_profile` | `apps/profile-service/prisma/schema.prisma` | user profiles |
+| `session-service` | `SESSION_DATABASE_URL` | `yourpassenger_session` | `apps/session-service/prisma/schema.prisma` | sessions, turns, summaries |
+| `conversation-service` | n/a | n/a | n/a | no persistent DB yet |
+| `app-server` | n/a | n/a | n/a | no persistent DB |
+
+Current rule:
+
+- one service owns one schema definition and one migration history
+- no service reaches into another service's tables
+- no shared `db-manager` service exists
 
 ## Core Principles
 
-1. PostgreSQL is the primary source of truth for product data.
-2. Prisma schema and migrations are first-class code artifacts and must be versioned.
-3. Every engineer uses an isolated development database.
-4. Automated tests must never share the development database.
-5. Production only runs `prisma migrate deploy`, never `prisma migrate dev`.
-6. Prefer expand-contract migrations for zero-downtime releases.
+1. PostgreSQL is the source of truth for product data.
+2. Prisma schema and migrations are versioned code artifacts.
+3. Migration ownership stays inside the service that owns the data.
+4. `local-up` uses `prisma migrate deploy`, not `prisma migrate dev`.
+5. Schema generation and migration are explicit orchestration steps, not `start` side effects.
+6. Prefer expand-contract migrations for any non-trivial production change.
 
-## Environment Strategy
+## Local Development Workflow
 
-| Environment | DB Isolation | Migration Command | Reset Policy |
-| --- | --- | --- | --- |
-| `dev` | per developer database | `prisma migrate dev` | optional manual reset |
-| `test` | per developer or ephemeral CI database | `prisma migrate deploy` (or reset + deploy) | reset before test suite |
-| `prod` | shared production cluster | `prisma migrate deploy` | never reset |
+### Standard Startup
 
-Recommended naming:
-
-- `yourpassenger_dev_<username>`
-- `yourpassenger_test_<username>`
-- `yourpassenger_prod`
-
-## One-Time Setup
-
-1. Install dependencies.
-2. Initialize Prisma with PostgreSQL.
-3. Create isolated local databases.
-4. Configure `.env` and `.env.test`.
-5. Run first migration.
-
-Example commands:
+Normal local startup is handled by:
 
 ```bash
-cd backend
-npm i @prisma/client
-npm i -D prisma dotenv-cli
-npx prisma init --datasource-provider postgresql
-npx prisma migrate dev --name init
+make local-up
 ```
 
-## Day-to-Day Schema Update Workflow
+That flow currently does the following:
 
-```text
-+--------------------------+
-| Create feature branch    |
-+--------------------------+
-            |
-            v
-+-------------------------------+
-| Edit prisma/schema.prisma     |
-+-------------------------------+
-            |
-            v
-+-----------------------------------------------+
-| Run prisma migrate dev --name <change_name>   |
-+-----------------------------------------------+
-            |
-            v
-+--------------------------+
-| Run tests and local app |
-+--------------------------+
-            |
-            v
-+-----------------------------------+
-| Commit schema + migration files   |
-+-----------------------------------+
-            |
-            v
-+------------------+
-| Open PR          |
-+------------------+
-            |
-            v
-+-----------------------------------+
-| CI validate + migration checks    |
-+-----------------------------------+
-            |
-            v
-      +-----------+
-      | pass ?    |
-      +-----------+
-            |
-           yes
-            |
-            v
-+------------------+
-| Merge            |
-+------------------+
-            |
-            v
-+------------------+
-| Release pipeline |
-+------------------+
-            |
-            v
-+------------------------------+
-| Run prisma migrate deploy    |
-+------------------------------+
-            |
-            v
-+------------------+
-| Rollout app      |
-+------------------+
+1. in default host mode, reads service DB URLs from root `.env.local`
+2. in `DOCKER=1` mode, starts local PostgreSQL via `docker-compose.local.yml`
+3. waits for Postgres readiness
+4. in `DOCKER=1` mode, creates the three service databases if needed
+5. runs Prisma client generation for `auth/profile/session`
+6. runs `prisma migrate deploy` for `auth/profile/session`
+7. starts all services
+8. waits for `/v1/health/ready`
+
+This means local services should always see a database that is already migrated to the current code version.
+
+### Day-to-Day Schema Change Workflow
+
+When changing a schema, work service-by-service.
+
+Example for `session-service`:
+
+```bash
+npm run prisma:migrate:dev -w @yourpassenger/session-service -- --name add_turn_metadata
+npm run prisma:generate -w @yourpassenger/session-service
+npm run typecheck -w @yourpassenger/session-service
+npm run build -w @yourpassenger/session-service
 ```
 
-## Branch Merge and Migration Conflict Rules
+Equivalent commands exist for `auth-service` and `profile-service`.
 
-1. Never modify committed historical migration files.
-2. If `schema.prisma` conflicts, resolve schema first.
-3. After rebase/merge, generate a new reconciliation migration if needed.
-4. Commit both schema and newly generated migration in the same PR.
+Rules:
+
+- edit only the schema for the owning service
+- generate a migration in that same service
+- commit schema and migration together
+- do not modify historical committed migration files
+
+## Migration Ownership Rules
+
+### `auth-service`
+
+Owns:
+
+- auth identity records
+- provider user IDs
+- token-related identity lookup data
+
+Must not own:
+
+- profile fields
+- session data
+- conversation summaries
+
+### `profile-service`
+
+Owns:
+
+- nickname
+- onboarding fields
+- conversation preferences
+- profile completeness truth
+
+Must not own:
+
+- auth provider mappings
+- session lifecycle
+- turns or summaries
+
+### `session-service`
+
+Owns:
+
+- session lifecycle
+- ownership checks
+- user/assistant turns
+- assistant state
+- summaries
+
+Must not own:
+
+- auth identities
+- profile preference truth
+
+## Branch and Merge Rules
+
+1. Never edit committed historical migration files.
+2. Resolve schema conflicts first, then generate a new reconciliation migration if needed.
+3. Commit schema changes and migration files in the same PR.
+4. If two branches change the same service schema, the merged branch must generate a new migration for the resolved state.
 
 Example reconciliation command:
 
 ```bash
-npx prisma migrate dev --name reconcile_after_rebase
+npm run prisma:migrate:dev -w @yourpassenger/session-service -- --name reconcile_after_rebase
 ```
 
-## Local Startup and Test Data Isolation
+## CI and Local Checks
 
-To avoid polluting development data with test login/session payloads:
-
-1. run app locally against `DATABASE_URL` (dev DB)
-2. run tests against `DATABASE_URL_TEST` (test DB)
-3. reset test DB before each test run or test suite
-4. do not point local app runtime to test DB
-
-Recommended test reset command:
+Minimum checks for any DB-affecting change:
 
 ```bash
-dotenv -e .env.test -- npx prisma migrate reset --force --skip-seed
+npm run prisma:generate -w @yourpassenger/auth-service
+npm run prisma:generate -w @yourpassenger/profile-service
+npm run prisma:generate -w @yourpassenger/session-service
+npm run typecheck
+npm run build
 ```
 
-## Makefile / CI Checks
+Recommended future CI additions:
 
-Use these checks as required CI gates:
+- `prisma validate` per service
+- migration apply on a fresh temporary Postgres instance
+- service-specific tests against isolated databases
 
-```makefile
-prisma-validate:
-	npx prisma validate
-	npx prisma format --check
+## Production / Deployment Rules
 
-migration-status:
-	npx prisma migrate status
+1. Production must only run `prisma migrate deploy`.
+2. Migration execution should happen in a dedicated migration job or pre-deploy step.
+3. App rollout should happen only after migration success.
+4. Failed migration blocks rollout.
+5. Forward-fix is preferred over rollback migration editing.
 
-migration-diff-check:
-	npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --exit-code
+## Zero-Downtime Guidance
 
-test-db-prepare:
-	dotenv -e .env.test -- npx prisma migrate reset --force --skip-seed
-	dotenv -e .env.test -- npx prisma migrate deploy
-```
+For non-trivial changes, use expand-contract:
 
-Recommended CI behavior:
+1. expand: add the new column / table / index
+2. dual write if needed
+3. backfill historical data
+4. switch reads to the new shape
+5. contract: remove the old shape later
 
-1. run `prisma-validate`
-2. run `migration-status`
-3. run `migration-diff-check`
-4. run migration apply on a clean temporary DB
-5. run backend tests
+Do not compress destructive changes into one release unless the data is disposable.
 
-## Kubernetes Release Workflow
+## Current Initial Migration Layout
 
-Use a dedicated migration job before app rollout.
+The repository now contains initial migrations for:
 
-```text
-+---------------+      +------------------------+      +---------------------------+
-| Build image   | ---> | Deploy Migration Job   | ---> | migrate deploy success ? |
-+---------------+      +------------------------+      +---------------------------+
-                                                             | yes            | no
-                                                             v                v
-                                             +----------------------------+   +---------------------------+
-                                             | Rollout Backend Deployment |   | Stop release and alert    |
-                                             +----------------------------+   +---------------------------+
-                                                            |
-                                                            v
-                                             +----------------------------+
-                                             | Post-deploy health checks |
-                                             +----------------------------+
-```
+- `apps/auth-service/prisma/migrations/20260420193000_init`
+- `apps/profile-service/prisma/migrations/20260420193000_init`
+- `apps/session-service/prisma/migrations/20260420193000_init`
 
-Operational rules:
+These are the baseline migrations that `make local-up` deploys.
 
-1. migration job image version must match app image version
-2. migration job must be idempotent (`prisma migrate deploy`)
-3. app deployment proceeds only after migration job success
-4. failed migration blocks rollout
+## Practical Rules To Keep
 
-## Zero-Downtime Migration Pattern (Expand-Contract)
-
-When changing critical fields:
-
-1. Expand: add new nullable column/table/index.
-2. Dual write: app writes old + new shape.
-3. Backfill: migrate historical rows in batches.
-4. Cutover: app reads new shape only.
-5. Contract: remove old shape in a later release.
-
-Avoid destructive one-step schema changes on hot paths.
-
-## Rollback and Recovery Strategy
-
-1. Prefer forward-fix over rollback migration scripts.
-2. Keep regular Postgres backups and tested restore procedure.
-3. Define RPO/RTO targets per environment.
-4. For failed production release:
-   1. stop rollout
-   2. assess migration impact
-   3. apply forward-fix migration or restore per runbook
-
-## Future Considerations and Analysis
-
-### 1) Service extraction readiness
-
-- current monolith can keep one primary Postgres
-- when splitting ASR/LLM/TTS services, keep session/profile ownership clear
-- consider `outbox_events` table for reliable event publishing to NATS/Kafka
-
-### 2) Realtime scale
-
-- `sessions` and `session_turns` will grow fast
-- add indexes by `(session_id, created_at)` and `(user_id, started_at)`
-- for heavy volume, consider table partitioning by time for `session_turns`
-
-### 3) Data lifecycle and cost
-
-- define retention policy for raw turns and summaries
-- move long-term analytics out of OLTP Postgres into warehouse pipeline
-
-### 4) Privacy and compliance
-
-- classify PII fields early
-- apply encryption at rest + TLS in transit
-- define deletion/anonymization workflow for user data requests
-
-### 5) Observability
-
-- track migration duration/failures
-- track DB connection pool saturation and slow queries
-- add release annotation linking app version to migration version
-
-## Release Checklist
-
-1. schema change reviewed
-2. migration generated and committed
-3. CI migration checks passed
-4. migration tested on clean DB
-5. K8s migration job configured
-6. rollback/recovery path confirmed
+- `local-clean` never deletes database data
+- `local-down` never removes Docker volumes by default
+- if you need a full reset later, add a separate `local-reset` command
+- if a migration makes old data invalid, fix the migration design instead of hiding the problem with implicit DB resets
