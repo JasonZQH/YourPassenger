@@ -9,6 +9,7 @@ coverage/
 .env.*
 !.env.example
 !**/.env.example
+apps/*/src/generated/
 *.tsbuildinfo
 
 # Swift / Xcode
@@ -22,3 +23,6 @@ xcuserdata/
 # Xcode project workspace user data
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+
+# Local orchestration
+.local/

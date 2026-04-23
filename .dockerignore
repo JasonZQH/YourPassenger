@@ -1,0 +1,11 @@
+.git
+.gitignore
+.local
+node_modules
+backend
+ios
+docs
+dist
+**/dist
+**/.env
+**/.env.local

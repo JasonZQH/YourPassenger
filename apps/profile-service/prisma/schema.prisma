@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PROFILE_DATABASE_URL")
+}
+
+model UserProfile {
+  userId                String   @id
+  nickname              String
+  interests             String[] @default([])
+  ageRange              String
+  gender                String
+  occupationCategory    String
+  hobbyTags             String[] @default([])
+  preferredLanguage     String
+  conversationStyle     String
+  responseLength        String
+  proactiveTopicPushing Boolean
+  avoidTopicTags        String[] @default([])
+  updatedAt             DateTime @updatedAt
+}

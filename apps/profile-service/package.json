@@ -1,0 +1,30 @@
+{
+  "name": "@yourpassenger/profile-service",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/apps/profile-service/src/generated && cp -R src/generated/prisma dist/apps/profile-service/src/generated/prisma",
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "prisma:migrate:status": "prisma migrate status --schema prisma/schema.prisma",
+    "start": "node dist/apps/profile-service/src/main.js",
+    "start:dev": "ts-node -r tsconfig-paths/register --project tsconfig.json src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.19",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.19",
+    "@nestjs/platform-express": "^11.1.19",
+    "@prisma/client": "^5.22.0",
+    "@yourpassenger/contracts": "file:../../packages/contracts",
+    "@yourpassenger/platform": "file:../../packages/platform",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
+  }
+}
