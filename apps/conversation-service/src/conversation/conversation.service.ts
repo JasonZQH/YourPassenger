@@ -3,8 +3,10 @@ import { Injectable } from '@nestjs/common';
 import type {
   AssistantReply,
   BuildAssistantReplyBody,
+  BuildRealtimeTurnBody,
   BuildConversationSummaryBody,
   ConversationSummary,
+  RealtimeTurnResponse,
 } from '@yourpassenger/contracts';
 
 @Injectable()
@@ -22,6 +24,26 @@ export class ConversationService {
 
     return {
       text: `Short answer for ${nickname}: ${utterance} connects well with ${interestHint}. I can keep going or shift to a related angle if you want.`,
+    };
+  }
+
+  buildRealtimeTurn(input: BuildRealtimeTurnBody): RealtimeTurnResponse {
+    const transcriptText =
+      input.utterance.trim() || 'Tell me something interesting for the road.';
+    const nickname = input.profile?.nickname ?? 'there';
+    const interestHint = input.profile?.interests[0]?.replace('_', ' ') ?? 'interesting topics';
+    const lastAssistantTurn = [...input.session.turns]
+      .reverse()
+      .find((turn) => turn.role === 'assistant')?.text;
+    const contextHint = lastAssistantTurn
+      ? ` We were just talking about ${lastAssistantTurn.slice(0, 80)}.`
+      : '';
+
+    return {
+      transcriptText,
+      assistantText: `Short answer for ${nickname}: ${transcriptText} connects well with ${interestHint}.${contextHint} I can keep going or shift to a related angle if you want.`,
+      audioFormat: 'mp3',
+      audioPayload: '',
     };
   }
 

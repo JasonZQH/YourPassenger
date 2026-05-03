@@ -16,7 +16,7 @@ apps/*/src/generated/
 DerivedData/
 .build/
 .swiftpm/
-Packages/
+ios/**/Packages/
 *.xcuserstate
 xcuserdata/
 
