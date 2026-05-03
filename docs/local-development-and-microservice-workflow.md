@@ -24,8 +24,8 @@
 - `app-server` 是对 iOS 暴露的唯一 HTTP / WebSocket 入口
 - `auth-service` 负责身份和 token
 - `profile-service` 负责 profile 真相
-- `session-service` 负责 session / turns / summary 真相
-- `conversation-service` 负责 reply / summary 编排逻辑
+- `session-service` 负责 session / turns / summary 真相，以及 end-session summary 编排
+- `conversation-service` 负责 reply / summary 编排逻辑，以及 `app-server` 的 gRPC realtime hot path
 
 ## 核心原则
 
@@ -87,7 +87,7 @@
 
 禁止新增统一 `db-manager` 服务。
 
-### 5. `clean` 不碰业务持久化数据
+### 5. `clean` 清运行态；是否清本地容器数据取决于模式
 
 `local-clean` 只清理可再生运行痕迹：
 
@@ -95,17 +95,13 @@
 - dist
 - 本地状态快照
 
-`local-clean` 不应：
+host mode 下，`local-clean` 不应：
 
 - 清空数据库
-- 删除 volume
 - 删除 seed 数据
 - 重置业务现场
 
-如果未来需要删库重建，应单独提供：
-
-- `make local-reset`
-- 或 `make db-reset`
+`DOCKER=1` 下，`local-clean` 可以清掉本地 Docker volume，用于重建容器化开发环境。
 
 ## 顶层本地开发命令
 
@@ -114,6 +110,8 @@
 - `make local-up`
 - `make local-clean`
 - `make local-down`
+- `make db-up`
+- `make db-down`
 
 这三个命令的语义必须保持稳定。
 
@@ -121,6 +119,7 @@
 
 - 默认 host mode：`make local-up`
 - 全容器模式：`make local-up DOCKER=1`
+- 数据库独立模式：`make db-up` / `make db-down`
 
 ### `make local-up`
 
@@ -137,6 +136,7 @@
 - 不自动启动 Docker PostgreSQL
 - 只要求当前配置指向的 PostgreSQL 可达
 - 在宿主机上运行 `auth/profile/session/conversation/app-server`
+- 支持通过 `SKIP=service-a,service-b` 跳过指定服务
 - 在当前 terminal 持续输出各服务实时日志
 - 同时归档到 `.local/<timestamp>_logs/service.log`
 - 同时把本次 `prisma migrate deploy` 的输出聚合到 `.local/<timestamp>_logs/migrations.log`
@@ -151,20 +151,14 @@
 4. 假定 `auth/profile/session` 三个数据库已经存在
 5. 运行 `auth/profile/session` 的 Prisma generate
 6. 运行 `auth/profile/session` 的 `prisma migrate deploy`
-7. 启动 `auth-service`
-8. 等 `auth-service /v1/health/ready`
-9. 启动 `profile-service`
-10. 等 `profile-service /v1/health/ready`
-11. 启动 `session-service`
-12. 等 `session-service /v1/health/ready`
-13. 启动 `conversation-service`
-14. 等 `conversation-service /v1/health/ready`
-15. 启动 `app-server`
-16. 等 `app-server /v1/health/ready`
-17. 输出入口地址和环境快照文件
-18. 输出本次日志归档目录
-19. 保持附着在当前 terminal，持续输出各服务实时日志
-20. `Ctrl+C` 时统一停止本地服务
+7. 并行启动 core layer：`auth/profile/session/conversation`
+8. 等 core layer 中所有活跃服务的 `/v1/health/ready`
+9. 启动 gateway layer：`app-server`
+10. 等 `app-server /v1/health/ready`
+11. 输出入口地址和环境快照文件
+12. 输出本次日志归档目录
+13. 保持附着在当前 terminal，持续输出各服务实时日志
+14. `Ctrl+C` 时统一停止本地服务
 
 #### `DOCKER=1` 全容器模式
 
@@ -175,6 +169,7 @@
 - 构建所有服务镜像
 - 在容器内运行 `prisma migrate deploy`
 - 通过 Docker Compose 启动所有服务
+- 支持通过 `SKIP=service-a,service-b` 跳过指定服务
 - 在当前 terminal 附着容器日志
 - 同时归档到 `.local/<timestamp>_logs/service.log`
 - 同时把本次 `prisma migrate deploy` 的输出聚合到 `.local/<timestamp>_logs/migrations.log`
@@ -189,20 +184,14 @@
 5. 确保 `auth/profile/session` 三个数据库存在
 6. 构建本地服务镜像
 7. 在容器内运行 `auth/profile/session` 的 `prisma migrate deploy`
-8. 启动 `auth-service`
-9. 等 `auth-service /v1/health/ready`
-10. 启动 `profile-service`
-11. 等 `profile-service /v1/health/ready`
-12. 启动 `session-service`
-13. 等 `session-service /v1/health/ready`
-14. 启动 `conversation-service`
-15. 等 `conversation-service /v1/health/ready`
-16. 启动 `app-server`
-17. 等 `app-server /v1/health/ready`
-18. 输出入口地址和环境快照文件
-19. 输出本次日志归档目录
-20. 保持附着在当前 terminal，持续输出容器实时日志
-21. `Ctrl+C` 时统一停止 Docker Compose
+8. 启动 core layer：`auth/profile/session/conversation`
+9. 等 core layer 中所有活跃服务的 `/v1/health/ready`
+10. 启动 gateway layer：`app-server`
+11. 等 `app-server /v1/health/ready`
+12. 输出入口地址和环境快照文件
+13. 输出本次日志归档目录
+14. 保持附着在当前 terminal，持续输出容器实时日志
+15. `Ctrl+C` 时统一停止 Docker Compose
 
 约束：
 
@@ -215,26 +204,55 @@
 - 如果未在根目录 `.env.local` 里设置服务级数据库 URL，`make local-up` 会直接失败
 - host mode 默认使用 `localhost:5432`
 - `DOCKER_POSTGRES_PORT` 仅用于 `DOCKER=1` 模式；如果未显式指定，脚本会自动选择一个可用端口
+- 如果使用 `SKIP` 跳过了 `auth/profile/session/conversation` 中任意一个服务，则必须同时跳过 `app-server`
+
+### `make db-up`
+
+职责：
+
+- 仅启动 Docker PostgreSQL
+- 为本地调试或手工 migration 提供独立数据库入口
+
+当前实现：
+
+1. 强制使用 Docker 模式
+2. 启动 `postgres`
+3. 等 PostgreSQL ready
+4. 幂等创建 `auth/profile/session` 三个数据库
+5. 输出当前数据库端口和环境快照
+
+### `make db-down`
+
+职责：
+
+- 仅停止 Docker PostgreSQL
+
+当前实现：
+
+1. 强制使用 Docker 模式
+2. 执行 `docker compose stop postgres`
 
 ### `make local-clean`
 
 职责：
 
 - 清除本地运行痕迹
-- 保留数据库数据和 Docker volume
+- 停止当前本地 runtime
+- host mode 下保留外部 PostgreSQL 数据
+- `DOCKER=1` 下重置本地 Docker volume
 
 当前实现：
 
-- 如果检测到本地服务还在运行，则拒绝执行并要求先 `make local-down`
+- host mode 下先停止宿主机服务，并对目标端口做 node/npm/npx 白名单清理
+- `DOCKER=1` 下执行 `docker compose down -v --remove-orphans`
 - 清空 `.local/run/`
 - 清空 `.local/<timestamp>_logs/`
 - 清理 `apps/*/dist`、`packages/*/dist`
 
 约束：
 
-- 不停数据库
-- 不删 volume
-- 不删数据库数据
+- host mode 不动外部 PostgreSQL
+- `DOCKER=1` 会删除本地 Docker PostgreSQL volume 和容器化数据库数据
 
 ### `make local-down`
 
@@ -247,6 +265,7 @@
 host mode：
 
 1. 按 `app-server -> conversation-service -> session-service -> profile-service -> auth-service` 停宿主机进程
+2. 对目标端口做 node/npm/npx 白名单清理，收掉残留进程
 
 `DOCKER=1` 模式：
 
@@ -365,7 +384,7 @@ host mode：
 3. `app-server` 校验 `sessionId` ownership
 4. `app-server` 读取一次 profile snapshot
 5. `app-server` 把用户 utterance 写入 `session-service`
-6. `app-server` 调用 `conversation-service` 生成 reply
+6. `app-server` 通过 gRPC 调用 `conversation-service` 生成 realtime reply
 7. `app-server` 把 assistant turn 写回 `session-service`
 8. `app-server` 向客户端回推 websocket event
 
@@ -374,7 +393,8 @@ host mode：
 - 不要在每个 realtime event 上同步 fan-out 到所有服务
 - token 校验和 ownership 校验只做 bootstrap 级别的必要调用
 - session 持久化由 `session-service` 负责
-- reply / summary 生成由 `conversation-service` 负责
+- realtime reply 生成由 `conversation-service` 负责
+- session 结束时的 summary 编排由 `session-service` 负责，并通过 `profile-service + conversation-service` 生成后落库
 
 ## 当前实现文件
 

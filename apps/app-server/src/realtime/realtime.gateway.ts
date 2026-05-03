@@ -12,36 +12,22 @@ import WebSocket, { WebSocketServer } from 'ws';
 
 import type {
   ClientRealtimeEvent,
-  ClientTextAudioCommitEvent,
   ServerRealtimeEvent,
-  UserProfile,
 } from '@yourpassenger/contracts';
 
-import { AuthService } from '../auth/auth.service';
-import { ConversationClientService } from '../conversation/conversation.service';
-import { ProfileService } from '../profile/profile.service';
-import { SessionsService } from '../sessions/sessions.service';
-
-interface RealtimeConnection {
-  socket: WebSocket;
-  userId: string;
-  sessionId: string;
-  profile: UserProfile | null;
-}
+import { RealtimeOrchestratorService } from './realtime.orchestrator.service';
+import type { RealtimeConnectionContext } from './realtime.types';
 
 @Injectable()
 export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RealtimeGateway.name);
   private readonly wsServer = new WebSocketServer({ noServer: true });
-  private readonly connections = new Map<WebSocket, RealtimeConnection>();
+  private readonly connections = new Map<WebSocket, RealtimeConnectionContext>();
   private upgradeHandler?: (request: IncomingMessage, socket: any, head: Buffer) => void;
 
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
-    private readonly authService: AuthService,
-    private readonly sessionsService: SessionsService,
-    private readonly profileService: ProfileService,
-    private readonly conversationService: ConversationClientService,
+    private readonly realtimeOrchestrator: RealtimeOrchestratorService,
   ) {}
 
   onModuleInit() {
@@ -104,13 +90,30 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    try {
-      const user = await this.authService.authenticateAccessToken(accessToken);
-      await this.sessionsService.getSession(user.id, sessionId);
-      const profile = await this.profileService.getProfile(user.id);
+    const bufferedMessages: WebSocket.RawData[] = [];
+    const bufferIncomingMessage = (data: WebSocket.RawData) => {
+      bufferedMessages.push(data);
+    };
+    const handleSocketClose = () => {
+      this.connections.delete(socket);
+    };
 
-      this.connections.set(socket, { socket, userId: user.id, sessionId, profile });
+    socket.on('message', bufferIncomingMessage);
+    socket.on('close', handleSocketClose);
+
+    try {
+      const connection = await this.realtimeOrchestrator.bootstrapConnection(
+        accessToken,
+        sessionId,
+      );
+
+      socket.off('message', bufferIncomingMessage);
+      this.connections.set(socket, connection);
       this.logger.log(`Realtime client connected for session ${sessionId}`);
+
+      socket.on('message', (data: WebSocket.RawData) => {
+        void this.handleMessage(socket, data);
+      });
 
       this.send(socket, {
         type: 'session.ready',
@@ -121,13 +124,9 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
         state: 'idle',
       });
 
-      socket.on('message', (data: WebSocket.RawData) => {
-        void this.handleMessage(socket, data);
-      });
-
-      socket.on('close', () => {
-        this.connections.delete(socket);
-      });
+      for (const bufferedMessage of bufferedMessages) {
+        await this.handleMessage(socket, bufferedMessage);
+      }
     } catch (error) {
       const isUnauthorized = error instanceof UnauthorizedException;
 
@@ -163,40 +162,15 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     try {
       switch (parsed.type) {
         case 'audio.chunk':
-          await this.sessionsService.updateAssistantState(
-            connection.userId,
-            connection.sessionId,
-            'listening',
-          );
-          this.send(socket, {
-            type: 'assistant.state',
-            state: 'listening',
-          });
-          break;
         case 'audio.commit':
-          await this.handleAudioCommit(socket, connection, parsed);
-          break;
         case 'assistant.interrupt':
-          await this.sessionsService.updateAssistantState(
-            connection.userId,
-            connection.sessionId,
-            'idle',
-          );
-          this.send(socket, {
-            type: 'assistant.interrupted',
-            messageId: `msg_${Date.now()}`,
-          });
-          this.send(socket, {
-            type: 'assistant.state',
-            state: 'idle',
-          });
+        case 'ping': {
+          const events = await this.realtimeOrchestrator.handleEvent(connection, parsed);
+          for (const event of events) {
+            this.send(socket, event);
+          }
           break;
-        case 'ping':
-          this.send(socket, {
-            type: 'pong',
-            ts: parsed.ts ?? Date.now(),
-          });
-          break;
+        }
         default:
           this.send(socket, {
             type: 'error',
@@ -218,80 +192,6 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
           : 'Realtime processing failed.',
       });
     }
-  }
-
-  private async handleAudioCommit(
-    socket: WebSocket,
-    connection: RealtimeConnection,
-    event: ClientTextAudioCommitEvent,
-  ) {
-    const utterance = event.text?.trim() || 'Tell me something interesting for the road.';
-
-    await this.sessionsService.appendTurn(
-      connection.userId,
-      connection.sessionId,
-      'user',
-      utterance,
-    );
-    await this.sessionsService.updateAssistantState(
-      connection.userId,
-      connection.sessionId,
-      'thinking',
-    );
-
-    this.send(socket, {
-      type: 'transcript.final',
-      utteranceId: `utt_${Date.now()}`,
-      text: utterance,
-    });
-    this.send(socket, {
-      type: 'assistant.state',
-      state: 'thinking',
-    });
-
-    const reply = await this.conversationService.buildAssistantReply({
-      utterance,
-      profile: connection.profile,
-    });
-
-    await this.sessionsService.appendTurn(
-      connection.userId,
-      connection.sessionId,
-      'assistant',
-      reply.text,
-    );
-    await this.sessionsService.updateAssistantState(
-      connection.userId,
-      connection.sessionId,
-      'speaking',
-    );
-
-    const messageId = `msg_${Date.now()}`;
-    this.send(socket, {
-      type: 'assistant.text',
-      messageId,
-      text: reply.text,
-    });
-    this.send(socket, {
-      type: 'assistant.state',
-      state: 'speaking',
-    });
-    this.send(socket, {
-      type: 'assistant.audio',
-      messageId,
-      audioFormat: 'mp3',
-      payload: '',
-    });
-
-    await this.sessionsService.updateAssistantState(
-      connection.userId,
-      connection.sessionId,
-      'idle',
-    );
-    this.send(socket, {
-      type: 'assistant.state',
-      state: 'idle',
-    });
   }
 
   private send(socket: WebSocket, event: ServerRealtimeEvent) {

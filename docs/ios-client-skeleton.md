@@ -125,6 +125,12 @@ Recommended loop:
 3. run the Xcode project on Simulator
 4. use `make local-down` when finished
 
+When validating startup/runtime changes, prefer:
+
+1. `make local-clean`
+2. `make local-up`
+3. run the Xcode project or smoke tests
+
 ## Current Known Limitations
 
 - Apple Sign In is still a local mock identity flow, not the system Apple auth sheet

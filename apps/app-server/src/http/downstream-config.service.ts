@@ -29,6 +29,10 @@ export class DownstreamConfigService {
     );
   }
 
+  getConversationServiceGrpcUrl(): string {
+    return this.configService.get<string>('CONVERSATION_SERVICE_GRPC_URL') ?? 'localhost:5104';
+  }
+
   getRealtimeBaseUrl(): string {
     const configuredBaseUrl = this.configService.get<string>('PUBLIC_WS_BASE_URL')?.trim();
     if (configuredBaseUrl) {

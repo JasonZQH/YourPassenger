@@ -2,6 +2,7 @@ import { Body, Controller, Post } from '@nestjs/common';
 
 import type {
   BuildAssistantReplyBody,
+  BuildRealtimeTurnBody,
   BuildConversationSummaryBody,
 } from '@yourpassenger/contracts';
 
@@ -14,6 +15,11 @@ export class ConversationController {
   @Post('reply')
   async buildAssistantReply(@Body() body: BuildAssistantReplyBody) {
     return this.conversationService.buildAssistantReply(body);
+  }
+
+  @Post('realtime-turn')
+  async buildRealtimeTurn(@Body() body: BuildRealtimeTurnBody) {
+    return this.conversationService.buildRealtimeTurn(body);
   }
 
   @Post('summary')

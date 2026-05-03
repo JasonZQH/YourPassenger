@@ -1,14 +1,38 @@
-import { request as httpRequest } from 'http';
-import { request as httpsRequest } from 'https';
+import {
+  Agent as HttpAgent,
+  request as httpRequest,
+} from 'http';
+import {
+  Agent as HttpsAgent,
+  request as httpsRequest,
+} from 'https';
 import {
   BadGatewayException,
   HttpException,
   Injectable,
+  OnModuleDestroy,
   ServiceUnavailableException,
 } from '@nestjs/common';
 
 @Injectable()
-export class DownstreamHttpService {
+export class DownstreamHttpService implements OnModuleDestroy {
+  private readonly httpAgent = new HttpAgent({
+    keepAlive: true,
+    maxSockets: 50,
+    keepAliveMsecs: 1000,
+  });
+
+  private readonly httpsAgent = new HttpsAgent({
+    keepAlive: true,
+    maxSockets: 50,
+    keepAliveMsecs: 1000,
+  });
+
+  onModuleDestroy() {
+    this.httpAgent.destroy();
+    this.httpsAgent.destroy();
+  }
+
   async get<T>(baseUrl: string, path: string, headers?: Record<string, string>): Promise<T> {
     return this.request<T>(baseUrl, path, 'GET', undefined, headers);
   }
@@ -47,6 +71,7 @@ export class DownstreamHttpService {
         url,
         {
           method,
+          agent: url.protocol === 'https:' ? this.httpsAgent : this.httpAgent,
           headers: {
             accept: 'application/json',
             ...(payload

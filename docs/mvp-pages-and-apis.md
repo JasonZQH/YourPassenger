@@ -21,16 +21,65 @@ The MVP still does not include:
 ## Runtime Architecture
 
 ```text
-iOS Client
-  |
-  | HTTP / WebSocket
-  v
-app-server
-  |
-  +--> auth-service
-  +--> profile-service
-  +--> session-service
-  +--> conversation-service
++----------------------+
+| iOS Simulator Client |
++----------------------+
+          |
+          | HTTP: /v1/auth/*, /v1/me, /v1/profile, /v1/sessions/*
+          | WebSocket: /v1/realtime?sessionId=...
+          v
++---------------------------------------------------------------------------------+
+|                                   app-server                                    |
+|                                 public REST + WS                                |
++---------------------------------------------------------------------------------+
+   | HTTP              | HTTP                | HTTP                | gRPC
+   v                   v                     v                     v
++--------------+  +----------------+  +----------------+  +----------------------+
+| auth-service |  | profile-service|  | session-service|  | conversation-service |
++--------------+  +----------------+  +----------------+  +----------------------+
+       |                  |                     |                    |
+       |                  |                     |                    +--> realtime turn generation
+       |                  |                     |                    +--> reply generation
+       |                  |                     |                    +--> summary generation
+       v                  v                     v
++-------------+   +---------------+    +---------------+
+| auth Postgres|   |profile Postgres|   |session Postgres|
++-------------+   +---------------+    +---------------+
+
+Session end path:
+
++----------------------+      +----------------------+      +----------------------+
+| iOS Simulator Client | ---> |      app-server      | ---> |    session-service   |
++----------------------+      +----------------------+      +----------------------+
+                                                                  |            |
+                                                                  | HTTP       | HTTP
+                                                                  v            v
+                                                       +----------------+  +----------------------+
+                                                       | profile-service|  | conversation-service |
+                                                       +----------------+  +----------------------+
+                                                                  \            /
+                                                                   \          /
+                                                                    v        v
+                                                             +----------------------+
+                                                             |   session Postgres   |
+                                                             +----------------------+
+
+Realtime hot path:
+
++----------------------+      +----------------------+      +----------------------+
+| iOS Simulator Client | ---> |      app-server      | ---> | conversation-service |
++----------------------+  WS  +----------------------+ gRPC +----------------------+
+                                   |
+                                   | HTTP commit completed turn
+                                   v
+                         +----------------------+
+                         |    session-service   |
+                         +----------------------+
+                                   |
+                                   v
+                         +----------------------+
+                         |   session Postgres   |
+                         +----------------------+
 ```
 
 Responsibilities:
@@ -38,8 +87,8 @@ Responsibilities:
 - `app-server`: public contract, auth enforcement, aggregation, websocket termination
 - `auth-service`: sign-in and token validation
 - `profile-service`: profile truth
-- `session-service`: session / turns / summaries truth
-- `conversation-service`: reply and summary generation logic
+- `session-service`: session / turns / summaries truth, plus end-session summary orchestration
+- `conversation-service`: reply and summary generation logic, plus gRPC realtime turn generation
 
 ## MVP User Flow
 
@@ -398,6 +447,7 @@ Owns:
 - user and assistant turns
 - assistant state
 - summaries
+- end-session summary orchestration
 
 ### `conversation-service`
 
@@ -405,7 +455,16 @@ Owns:
 
 - assistant reply generation
 - conversation summary generation
+- gRPC realtime turn generation for `app-server`
 - future ASR / LLM / TTS integration points
+
+Session summary path:
+
+1. `app-server` forwards `POST /v1/sessions/:id/end`
+2. `session-service` loads the owned session
+3. `session-service` fetches a profile snapshot from `profile-service`
+4. `session-service` asks `conversation-service` to build the summary
+5. `session-service` stores the summary and marks the session ended
 
 ## Realtime Hot Path Rule
 
@@ -414,13 +473,18 @@ The current design keeps the realtime hot path narrow:
 1. client connects to `app-server`
 2. `app-server` validates bearer token
 3. `app-server` validates `sessionId` ownership
-4. `app-server` loads profile snapshot once
-5. `app-server` writes user turn to `session-service`
-6. `app-server` calls `conversation-service` for reply generation
-7. `app-server` writes assistant turn/state back to `session-service`
-8. `app-server` emits websocket events to the client
+4. `app-server` loads profile + session snapshot once during bootstrap
+5. `app-server` forwards realtime turn generation to `conversation-service` over gRPC
+6. `app-server` persists the completed realtime turn to `session-service` in a single commit
+7. `app-server` emits websocket events to the client
 
 This avoids synchronous fan-out to all services on every realtime event.
+
+Bootstrap behavior:
+
+- `app-server` now buffers websocket messages received before realtime bootstrap completes
+- this prevents the first `audio.commit` from being dropped if the client sends immediately after socket open
+- `session.ready` remains the stable protocol marker that the session is ready for normal traffic
 
 ## Current Limitations
 

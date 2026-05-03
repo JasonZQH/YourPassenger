@@ -8,6 +8,10 @@ Ownership:
 - public realtime websocket termination
 - auth/profile/session aggregation
 - realtime bootstrap and stream forwarding
+- thin orchestration for the realtime hot path, delegated to `conversation-service`
+- single-call realtime turn persistence delegated to `session-service`
+- gRPC client for the `conversation-service` realtime hot path
+- forwards session end requests without owning summary generation
 
 Non-ownership:
 

@@ -2,19 +2,17 @@ import { Injectable } from '@nestjs/common';
 
 import type {
   AssistantState,
+  CommitRealtimeTurnBody,
   CreateSessionBody,
   CreateOwnedSessionBody,
   EndOwnedSessionBody,
   EndSessionBody,
-  MessageRole,
   SessionRecord,
   SessionSummary,
 } from '@yourpassenger/contracts';
 
-import { ConversationClientService } from '../conversation/conversation.service';
 import { DownstreamConfigService } from '../http/downstream-config.service';
 import { DownstreamHttpService } from '../http/downstream-http.service';
-import { ProfileService } from '../profile/profile.service';
 import type { CreateSessionResponse, PublicSessionView } from './sessions.types';
 
 @Injectable()
@@ -22,8 +20,6 @@ export class SessionsService {
   constructor(
     private readonly downstreamConfig: DownstreamConfigService,
     private readonly downstreamHttp: DownstreamHttpService,
-    private readonly conversationService: ConversationClientService,
-    private readonly profileService: ProfileService,
   ) {}
 
   async createSession(
@@ -65,46 +61,26 @@ export class SessionsService {
     );
   }
 
-  async appendTurn(
+  async commitRealtimeTurn(
     userId: string,
     sessionId: string,
-    role: MessageRole,
-    text: string,
+    transcriptText: string,
+    assistantText: string,
+    finalAssistantState: AssistantState = 'idle',
   ): Promise<SessionRecord> {
     return this.downstreamHttp.post<SessionRecord>(
       this.downstreamConfig.getSessionServiceBaseUrl(),
-      `/sessions/${encodeURIComponent(sessionId)}/turns`,
+      `/sessions/${encodeURIComponent(sessionId)}/realtime-turn`,
       {
         userId,
-        role,
-        text,
-      },
-    );
-  }
-
-  async updateAssistantState(
-    userId: string,
-    sessionId: string,
-    state: AssistantState,
-  ): Promise<SessionRecord> {
-    return this.downstreamHttp.post<SessionRecord>(
-      this.downstreamConfig.getSessionServiceBaseUrl(),
-      `/sessions/${encodeURIComponent(sessionId)}/assistant-state`,
-      {
-        userId,
-        state,
-      },
+        transcriptText,
+        assistantText,
+        finalAssistantState,
+      } satisfies CommitRealtimeTurnBody,
     );
   }
 
   async endSession(userId: string, sessionId: string, body: EndSessionBody) {
-    const session = await this.getOwnedSessionRecord(userId, sessionId);
-    const profile = await this.profileService.getProfile(userId);
-    const summary = await this.conversationService.buildSummary({
-      session,
-      profile,
-    });
-
     return this.downstreamHttp.post<{
       id: string;
       status: SessionRecord['status'];
@@ -115,7 +91,6 @@ export class SessionsService {
       {
         userId,
         reason: body.reason,
-        summary,
       } satisfies EndOwnedSessionBody,
     );
   }

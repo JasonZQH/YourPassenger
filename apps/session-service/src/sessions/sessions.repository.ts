@@ -114,6 +114,66 @@ export class SessionsRepository {
     return this.getSession(userId, sessionId);
   }
 
+  async commitRealtimeTurn(
+    userId: string,
+    sessionId: string,
+    transcriptText: string,
+    assistantText: string,
+    finalAssistantState: AssistantState,
+  ): Promise<SessionRecord | null> {
+    let ownsSession = true;
+
+    await this.prisma.$transaction(async (tx) => {
+      const ownedSession = await tx.session.findFirst({
+        where: {
+          id: sessionId,
+          userId,
+        },
+        select: { id: true },
+      });
+      if (!ownedSession) {
+        ownsSession = false;
+        return;
+      }
+
+      const updatedSession = await tx.session.update({
+        where: { id: sessionId },
+        data: {
+          turnCount: {
+            increment: 2,
+          },
+          latestAssistantState: finalAssistantState,
+        },
+        select: {
+          turnCount: true,
+        },
+      });
+
+      await tx.sessionTurn.createMany({
+        data: [
+          {
+            sessionId,
+            turnIndex: updatedSession.turnCount - 2,
+            role: 'user',
+            text: transcriptText,
+          },
+          {
+            sessionId,
+            turnIndex: updatedSession.turnCount - 1,
+            role: 'assistant',
+            text: assistantText,
+          },
+        ],
+      });
+    });
+
+    if (!ownsSession) {
+      return null;
+    }
+
+    return this.getSession(userId, sessionId);
+  }
+
   async endSession(
     userId: string,
     sessionId: string,

@@ -1,7 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 
 import type {
   AppendSessionTurnBody,
+  CommitRealtimeTurnBody,
   CreateOwnedSessionBody,
   EndOwnedSessionBody,
   SessionRecord,
@@ -11,11 +16,19 @@ import type {
   UpsertSessionSummaryBody,
 } from '@yourpassenger/contracts';
 
+import { ConversationClientService } from '../conversation/conversation-client.service';
+import { ProfileClientService } from '../profile/profile-client.service';
 import { SessionsRepository } from './sessions.repository';
 
 @Injectable()
 export class SessionsService {
-  constructor(private readonly sessionsRepository: SessionsRepository) {}
+  private readonly logger = new Logger(SessionsService.name);
+
+  constructor(
+    private readonly sessionsRepository: SessionsRepository,
+    private readonly profileClientService: ProfileClientService,
+    private readonly conversationClientService: ConversationClientService,
+  ) {}
 
   async createSession(body: CreateOwnedSessionBody): Promise<SessionRecord> {
     return this.sessionsRepository.createSession(body.userId);
@@ -38,7 +51,7 @@ export class SessionsService {
 
     const summary = this.withSessionId(
       sessionId,
-      body.summary ?? this.buildFallbackSummary(session),
+      body.summary ?? (await this.buildSummaryInput(body.userId, session)),
     );
     const ended = await this.sessionsRepository.endSession(body.userId, sessionId, summary);
     if (!ended?.endedAt) {
@@ -80,6 +93,24 @@ export class SessionsService {
       sessionId,
       body.role,
       body.text,
+    );
+    if (!session) {
+      throw new NotFoundException(`Session ${sessionId} not found.`);
+    }
+
+    return session;
+  }
+
+  async commitRealtimeTurn(
+    sessionId: string,
+    body: CommitRealtimeTurnBody,
+  ): Promise<SessionRecord> {
+    const session = await this.sessionsRepository.commitRealtimeTurn(
+      body.userId,
+      sessionId,
+      body.transcriptText,
+      body.assistantText,
+      body.finalAssistantState ?? 'idle',
     );
     if (!session) {
       throw new NotFoundException(`Session ${sessionId} not found.`);
@@ -144,6 +175,26 @@ export class SessionsService {
       topics: session.turns.length === 0 ? ['general conversation'] : ['user-led topic'],
       memoryCandidates: [`Session contained ${session.turns.length} turns.`],
     };
+  }
+
+  private async buildSummaryInput(
+    userId: string,
+    session: SessionRecord,
+  ): Promise<SessionSummaryInput> {
+    try {
+      const profile = await this.profileClientService.getProfile(userId);
+      return await this.conversationClientService.buildSummary({
+        session,
+        profile,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Falling back to local summary generation for session ${session.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return this.buildFallbackSummary(session);
+    }
   }
 
   private getDurationSeconds(session: SessionRecord): number {

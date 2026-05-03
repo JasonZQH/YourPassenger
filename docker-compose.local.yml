@@ -66,6 +66,8 @@ services:
     environment:
       SESSION_SERVICE_PORT: "3103"
       SESSION_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-db_user}:${LOCAL_POSTGRES_PASSWORD:-db_password}@postgres:5432/yourpassenger_session?schema=public"
+      PROFILE_SERVICE_BASE_URL: "http://profile-service:3102"
+      CONVERSATION_SERVICE_BASE_URL: "http://conversation-service:3104"
     ports:
       - "${SESSION_SERVICE_PORT:-3103}:3103"
     healthcheck:
@@ -85,11 +87,13 @@ services:
     command: ["npm", "run", "start", "-w", "@yourpassenger/conversation-service"]
     environment:
       CONVERSATION_SERVICE_PORT: "3104"
+      CONVERSATION_SERVICE_GRPC_PORT: "5104"
       LLM_PROVIDER: "${LLM_PROVIDER:-mock}"
       TTS_PROVIDER: "${TTS_PROVIDER:-mock}"
       ASR_PROVIDER: "${ASR_PROVIDER:-mock}"
     ports:
       - "${CONVERSATION_SERVICE_PORT:-3104}:3104"
+      - "${CONVERSATION_SERVICE_GRPC_PORT:-5104}:5104"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3104/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
       interval: 5s
@@ -109,6 +113,7 @@ services:
       PROFILE_SERVICE_BASE_URL: "http://profile-service:3102"
       SESSION_SERVICE_BASE_URL: "http://session-service:3103"
       CONVERSATION_SERVICE_BASE_URL: "http://conversation-service:3104"
+      CONVERSATION_SERVICE_GRPC_URL: "conversation-service:5104"
       PUBLIC_WS_BASE_URL: "${PUBLIC_WS_BASE_URL:-ws://localhost:${APP_SERVER_PORT:-3000}}"
     ports:
       - "${APP_SERVER_PORT:-3000}:3000"

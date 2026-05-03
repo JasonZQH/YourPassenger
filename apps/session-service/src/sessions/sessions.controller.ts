@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 
 import type {
   AppendSessionTurnBody,
+  CommitRealtimeTurnBody,
   CreateOwnedSessionBody,
   EndOwnedSessionBody,
   OwnedSessionQuery,
@@ -38,6 +39,14 @@ export class SessionsController {
   @Post(':id/turns')
   async appendTurn(@Param('id') sessionId: string, @Body() body: AppendSessionTurnBody) {
     return this.sessionsService.appendTurn(sessionId, body);
+  }
+
+  @Post(':id/realtime-turn')
+  async commitRealtimeTurn(
+    @Param('id') sessionId: string,
+    @Body() body: CommitRealtimeTurnBody,
+  ) {
+    return this.sessionsService.commitRealtimeTurn(sessionId, body);
   }
 
   @Post(':id/assistant-state')
