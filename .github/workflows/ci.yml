@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  node:
+    name: typecheck / build / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      # postinstall runs prisma generate for the three database services.
+      # Their generated clients are gitignored, so a fresh checkout cannot
+      # typecheck or build without this step.
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test

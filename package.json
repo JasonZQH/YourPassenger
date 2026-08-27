@@ -6,8 +6,11 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "npm run prisma:generate",
+    "prisma:generate": "npm run prisma:generate --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "ts-node --project apps/app-server/tsconfig.json -r tsconfig-paths/register test/session-realtime-contract.test.ts && ts-node --project apps/chat-agent-service/tsconfig.json -r tsconfig-paths/register test/chat-agent-vad.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
