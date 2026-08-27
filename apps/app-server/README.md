@@ -6,6 +6,7 @@ Ownership:
 
 - public REST API for iOS
 - public realtime websocket termination
+- LiveKit participant token minting when LiveKit env is configured
 - auth/profile/session aggregation
 - realtime bootstrap and stream forwarding
 - thin orchestration for the realtime hot path, delegated to `conversation-service`
@@ -33,3 +34,13 @@ Current surface:
 - `GET /v1/health/live`
 - `GET /v1/health/ready`
 - `GET /v1/realtime?sessionId=<sessionId>` (WebSocket upgrade)
+
+Realtime session creation:
+
+- If `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` are set,
+  `POST /v1/sessions` returns `transport: "livekit"` with `livekitUrl`,
+  `roomName`, and a scoped `participantToken`.
+- For LiveKit sessions, `app-server` dispatches `chat-agent-service` to join the
+  room as the assistant participant before returning the connection payload.
+- Otherwise `POST /v1/sessions` returns `transport: "websocket"` with the
+  existing `wsUrl` and bearer token fallback.

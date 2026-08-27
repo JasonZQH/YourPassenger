@@ -7,6 +7,7 @@ export class AuthPrismaService
   extends PrismaClient
   implements OnModuleDestroy
 {
+  // Configures Prisma with the auth service database URL.
   constructor(configService: ConfigService) {
     super({
       datasources: {
@@ -17,6 +18,7 @@ export class AuthPrismaService
     });
   }
 
+  // Disconnects Prisma when the Nest module shuts down.
   async onModuleDestroy() {
     await this.$disconnect();
   }

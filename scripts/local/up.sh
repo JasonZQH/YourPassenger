@@ -279,7 +279,7 @@ run_migration_phase() {
 }
 
 run_service_startup_phase() {
-  start_layer "core" auth-service profile-service session-service conversation-service
+  start_layer "core" auth-service profile-service session-service conversation-service chat-agent-service
   start_layer "gateway" app-server
 }
 
@@ -287,6 +287,7 @@ print_runtime_summary() {
   echo ""
   echo "Local environment is up."
   echo "- app-server: http://localhost:$APP_SERVER_PORT/v1"
+  echo "- chat-agent: http://localhost:$CHAT_AGENT_SERVICE_PORT/v1"
   echo "- realtime:   ws://localhost:$APP_SERVER_PORT/v1/realtime"
   echo "- logs:       $LOG_ARCHIVE_DIR"
   echo "- migrations: $(migration_log_file)"

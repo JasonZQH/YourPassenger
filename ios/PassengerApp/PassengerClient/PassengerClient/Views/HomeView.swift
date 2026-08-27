@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var appViewModel: AppViewModel
 
+    // Renders the home screen with profile preview and chat entry point.
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             HStack {
@@ -47,11 +48,13 @@ struct HomeView: View {
         .padding(PassengerTheme.pagePadding)
     }
 
+    // Returns the single-letter avatar label from the user's nickname.
     private var avatarLabel: String {
         let nickname = appViewModel.profile?.nickname.trimmingCharacters(in: .whitespacesAndNewlines) ?? "P"
         return String(nickname.prefix(1)).uppercased()
     }
 
+    // Builds a short interests preview for the home screen copy.
     private var interestPreview: String {
         guard let interests = appViewModel.profile?.interests, !interests.isEmpty else {
             return "wide-ranging conversations"

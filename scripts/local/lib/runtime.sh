@@ -228,7 +228,7 @@ stop_local_environment() {
     return
   fi
 
-  for service in app-server conversation-service session-service profile-service auth-service; do
+  for service in app-server chat-agent-service conversation-service session-service profile-service auth-service; do
     stop_service "$service"
   done
   cleanup_service_ports

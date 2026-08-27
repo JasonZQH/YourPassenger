@@ -19,6 +19,7 @@
     "@nestjs/platform-express": "^11.1.19",
     "@yourpassenger/contracts": "file:../../packages/contracts",
     "@yourpassenger/platform": "file:../../packages/platform",
+    "livekit-server-sdk": "^2.15.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "ws": "^8.20.0"

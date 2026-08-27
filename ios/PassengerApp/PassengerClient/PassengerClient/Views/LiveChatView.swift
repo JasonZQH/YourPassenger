@@ -8,10 +8,11 @@ final class ChatViewModel: ObservableObject {
     @Published var messages: [MessageBubble] = []
     @Published var isInterrupted = false
     @Published var connectionStatus = "Connecting..."
+    @Published var draftPrompt = ""
 
     private let profile: UserProfile
     private let session: ChatSession
-    private let realtimeClient: RealtimeWebSocketClient
+    private let realtimeClient: RealtimeClient
     private let cannedPrompts = [
         "Tell me something interesting about the Silk Road.",
         "Give me a short history topic for a drive.",
@@ -19,67 +20,140 @@ final class ChatViewModel: ObservableObject {
     ]
     private var nextPromptIndex = 0
 
+    // Creates the view model and chooses the realtime transport for the session.
     init(session: ChatSession, profile: UserProfile) {
         self.session = session
         self.profile = profile
-        self.realtimeClient = RealtimeWebSocketClient(url: session.wsURL, token: session.realtimeToken)
-    }
-
-    func connect() async {
-        do {
-            try await realtimeClient.connect { [weak self] event in
-                Task { @MainActor in
-                    self?.handle(event: event)
-                }
-            }
-            connectionStatus = "Connected to backend"
-            print("[WS] Connected:", session.wsURL.absoluteString)
-        } catch {
-            connectionStatus = "Realtime unavailable"
-            messages.append(
-                MessageBubble(
-                    id: UUID().uuidString,
-                    role: .assistant,
-                    text: "I could not connect to the realtime service."
+        switch session.realtime {
+        case .websocket(let wsURL, let token):
+            self.realtimeClient = .websocket(RealtimeWebSocketClient(url: wsURL, token: token))
+        case .livekit(let livekitURL, let roomName, let participantToken):
+            self.realtimeClient = .livekit(
+                LiveKitRealtimeClient(
+                    livekitURL: livekitURL,
+                    roomName: roomName,
+                    participantToken: participantToken
                 )
             )
-            print("[WS] Connect error:", error.localizedDescription)
         }
     }
 
-    func disconnect() {
-        realtimeClient.disconnect()
+    // Connects to the configured realtime transport and wires event handling.
+    func connect() async {
+        switch realtimeClient {
+        case .websocket(let client):
+            do {
+                try await client.connect { [weak self] event in
+                    Task { @MainActor in
+                        self?.handle(event: event)
+                    }
+                }
+                connectionStatus = "Connected to backend"
+                if case .websocket(let wsURL, _) = session.realtime {
+                    print("[WS] Connected:", wsURL.absoluteString)
+                }
+            } catch {
+                connectionStatus = "Realtime unavailable"
+                messages.append(
+                    MessageBubble(
+                        id: UUID().uuidString,
+                        role: .assistant,
+                        text: "I could not connect to the realtime service."
+                    )
+                )
+                print("[WS] Connect error:", error.localizedDescription)
+            }
+        case .livekit(let client):
+            do {
+                try await client.connect { [weak self] event in
+                    Task { @MainActor in
+                        self?.handle(event: event)
+                    }
+                }
+                connectionStatus = "LiveKit connected: \(client.roomName)"
+                print("[LiveKit] Connected:", client.roomName)
+            } catch {
+                connectionStatus = "LiveKit unavailable"
+                messages.append(
+                    MessageBubble(
+                        id: UUID().uuidString,
+                        role: .assistant,
+                        text: "I could not connect to the LiveKit room."
+                    )
+                )
+                print("[LiveKit] Connect error:", error.localizedDescription)
+            }
+        }
     }
 
+    // Disconnects from the active realtime transport.
+    func disconnect() {
+        switch realtimeClient {
+        case .websocket(let client):
+            client.disconnect()
+        case .livekit(let client):
+            Task {
+                await client.disconnect()
+            }
+        }
+    }
+
+    // Sends typed text or a manual audio commit through the realtime transport.
     func sendPrompt() async {
         guard assistantState == .idle || assistantState == .listening else { return }
 
-        let prompt = cannedPrompts[nextPromptIndex % cannedPrompts.count]
-        nextPromptIndex += 1
-        partialTranscript = prompt
+        switch realtimeClient {
+        case .websocket(let client):
+            let prompt = nextPrompt(useFallback: true)
+            partialTranscript = prompt
 
-        do {
-            try await realtimeClient.sendAudioCommit(text: prompt)
-            print("[WS] Sent audio.commit:", prompt)
-        } catch {
-            connectionStatus = "Failed to send"
-            print("[WS] Send error:", error.localizedDescription)
+            do {
+                try await client.sendAudioCommit(text: prompt)
+                print("[WS] Sent audio.commit:", prompt)
+            } catch {
+                connectionStatus = "Failed to send"
+                print("[WS] Send error:", error.localizedDescription)
+            }
+        case .livekit(let client):
+            let prompt = nextPrompt(useFallback: false)
+            partialTranscript = prompt.isEmpty ? "Listening..." : prompt
+
+            do {
+                try await client.sendAudioCommit(text: prompt)
+                connectionStatus = "Sent to LiveKit room: \(client.roomName)"
+                print("[LiveKit] Sent audio.commit:", prompt)
+            } catch {
+                connectionStatus = "Failed to send"
+                print("[LiveKit] Send error:", error.localizedDescription)
+            }
         }
     }
 
+    // Requests interruption of the assistant while it is speaking.
     func interrupt() {
         guard assistantState == .speaking else { return }
         isInterrupted = true
-        Task {
-            try? await realtimeClient.sendInterrupt()
+        switch realtimeClient {
+        case .websocket(let client):
+            Task {
+                try? await client.sendInterrupt()
+            }
+        case .livekit(let client):
+            Task {
+                try? await client.sendInterrupt()
+            }
         }
     }
 
+    // Returns the primary status copy for the current assistant state.
     var statusText: String {
         switch assistantState {
         case .idle:
+            if usesLiveKitRealtime && !connectionStatus.contains("unavailable") && !connectionStatus.contains("Failed") {
+                return "Listening hands-free. Speak naturally."
+            }
             return connectionStatus == "Connected to backend"
-                ? "Tap the mic to send a real websocket event."
+                ? "Tap the mic to send a websocket test event."
                 : connectionStatus
         case .listening:
             return "Listening for the end of your utterance."
@@ -90,6 +164,14 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
+    // Returns helper copy for the manual microphone fallback.
+    var manualPromptText: String {
+        usesLiveKitRealtime
+            ? "Hands-free listening is on. Tap the mic only to submit the current audio manually."
+            : "Say hello when you're ready."
+    }
+
+    // Applies one realtime server event to local chat state.
     private func handle(event: RealtimeServerEvent) {
         switch event {
         case .sessionReady(let sessionId):
@@ -124,16 +206,46 @@ final class ChatViewModel: ObservableObject {
             print("[WS] Server error:", code, message)
         }
     }
+
+    // Returns typed prompt text or the next websocket fallback prompt.
+    private func nextPrompt(useFallback: Bool) -> String {
+        let typedPrompt = draftPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typedPrompt.isEmpty {
+            draftPrompt = ""
+            return typedPrompt
+        }
+
+        guard useFallback else { return "" }
+
+        let prompt = cannedPrompts[nextPromptIndex % cannedPrompts.count]
+        nextPromptIndex += 1
+        return prompt
+    }
+
+    private enum RealtimeClient {
+        case websocket(RealtimeWebSocketClient)
+        case livekit(LiveKitRealtimeClient)
+    }
+
+    // Returns whether the current session uses LiveKit realtime.
+    private var usesLiveKitRealtime: Bool {
+        if case .livekit = realtimeClient {
+            return true
+        }
+        return false
+    }
 }
 
 struct LiveChatView: View {
     @EnvironmentObject private var appViewModel: AppViewModel
     @StateObject private var chatViewModel: ChatViewModel
 
+    // Creates the live chat view with a session-scoped view model.
     init(session: ChatSession, profile: UserProfile) {
         _chatViewModel = StateObject(wrappedValue: ChatViewModel(session: session, profile: profile))
     }
 
+    // Renders the live chat transcript, controls, and connection lifecycle.
     var body: some View {
         VStack(spacing: 18) {
             HStack {
@@ -185,6 +297,21 @@ struct LiveChatView: View {
                     WaveformView(isAnimating: chatViewModel.assistantState != .idle)
                         .frame(height: 64)
 
+                    TextField("Ask your passenger", text: $chatViewModel.draftPrompt)
+                        .textInputAutocapitalization(.sentences)
+                        .disableAutocorrection(false)
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(Color.white.opacity(0.76))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .submitLabel(.send)
+                        .onSubmit {
+                            Task {
+                                await chatViewModel.sendPrompt()
+                            }
+                        }
+
                     Button {
                         Task {
                             await chatViewModel.sendPrompt()
@@ -202,7 +329,7 @@ struct LiveChatView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("Voice capture plugs in here next. The screen contract already matches the session and realtime API design.")
+                    Text(chatViewModel.manualPromptText)
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(PassengerTheme.secondaryInk)
                         .multilineTextAlignment(.center)

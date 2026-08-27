@@ -13,11 +13,13 @@ import type { AuthContext, AuthenticatedRequest } from './auth.types';
 
 @Injectable()
 export class AuthService {
+  // Wires auth persistence and configuration dependencies for token operations.
   constructor(
     private readonly authRepository: AuthRepository,
     private readonly configService: ConfigService,
   ) {}
 
+  // Validates an Apple identity token and returns app-issued credentials.
   async signInWithApple(identityToken: string): Promise<AuthResponse> {
     const normalizedIdentityToken = identityToken.trim();
     if (!normalizedIdentityToken) {
@@ -28,16 +30,19 @@ export class AuthService {
     return this.buildAuthResponse(user);
   }
 
+  // Creates an anonymous guest user and returns app-issued credentials.
   async signInAsGuest(): Promise<AuthResponse> {
     const user = await this.authRepository.createGuestUser();
     return this.buildAuthResponse(user);
   }
 
+  // Resolves the current authenticated user from the incoming request.
   async getCurrentUser(request: AuthenticatedRequest): Promise<CurrentUserView> {
     const { user } = await this.requireAuth(request);
     return user;
   }
 
+  // Requires a valid bearer token and caches the auth context on the request.
   async requireAuth(request: AuthenticatedRequest): Promise<AuthContext> {
     if (request.authContext) {
       return request.authContext;
@@ -54,6 +59,7 @@ export class AuthService {
     return authContext;
   }
 
+  // Verifies an access token and loads the user it represents.
   async authenticateAccessToken(accessToken: string): Promise<CurrentUserView> {
     const payload = this.verifyToken(accessToken, 'access');
     const user = await this.authRepository.getCurrentUser(payload.sub);
@@ -64,6 +70,7 @@ export class AuthService {
     return user;
   }
 
+  // Builds the public auth response with access and refresh tokens.
   private buildAuthResponse(user: CurrentUserView): AuthResponse {
     return {
       accessToken: this.issueToken(user.id, 'access'),
@@ -72,6 +79,7 @@ export class AuthService {
     };
   }
 
+  // Issues a signed token payload for a user and token kind.
   private issueToken(userId: string, kind: TokenPayload['kind']): string {
     const payload: TokenPayload = {
       sub: userId,
@@ -84,6 +92,7 @@ export class AuthService {
     return `${encodedPayload}.${signature}`;
   }
 
+  // Validates token structure, signature, kind, and subject.
   private verifyToken(
     token: string,
     expectedKind: TokenPayload['kind'],
@@ -119,16 +128,19 @@ export class AuthService {
     return payload;
   }
 
+  // Signs an encoded token payload with the configured HMAC secret.
   private sign(encodedPayload: string): string {
     return createHmac('sha256', this.getTokenSecret())
       .update(encodedPayload)
       .digest('base64url');
   }
 
+  // Reads the shared auth token secret from service configuration.
   private getTokenSecret(): string {
     return this.configService.getOrThrow<string>('AUTH_TOKEN_SECRET');
   }
 
+  // Extracts the raw bearer token from an Authorization header.
   private extractBearerToken(
     authorizationHeader?: string | string[],
   ): string | null {

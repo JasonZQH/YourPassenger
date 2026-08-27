@@ -39,8 +39,10 @@ enum InterestTag: String, CaseIterable, Identifiable, Codable {
     case movies
     case music
 
+    // Returns the stable identifier for this tag.
     var id: String { rawValue }
 
+    // Returns display text for this interest tag.
     var title: String {
         switch self {
         case .internationalNews:
@@ -59,8 +61,10 @@ enum AgeRange: String, CaseIterable, Identifiable, Codable {
     case fortyFiveToFiftyFour = "45_54"
     case fiftyFivePlus = "55_plus"
 
+    // Returns the stable identifier for this age range.
     var id: String { rawValue }
 
+    // Returns display text for this age range.
     var title: String {
         switch self {
         case .under18: return "Under 18"
@@ -79,8 +83,10 @@ enum GenderIdentity: String, CaseIterable, Identifiable, Codable {
     case nonbinary
     case preferNotToSay = "prefer_not_to_say"
 
+    // Returns the stable identifier for this gender option.
     var id: String { rawValue }
 
+    // Returns display text for this gender option.
     var title: String {
         switch self {
         case .nonbinary:
@@ -105,8 +111,10 @@ enum OccupationCategory: String, CaseIterable, Identifiable, Codable {
     case logistics
     case other
 
+    // Returns the stable identifier for this occupation option.
     var id: String { rawValue }
 
+    // Returns display text for this occupation option.
     var title: String {
         rawValue.capitalized
     }
@@ -124,8 +132,10 @@ enum HobbyTag: String, CaseIterable, Identifiable, Codable {
     case podcasts
     case design
 
+    // Returns the stable identifier for this hobby tag.
     var id: String { rawValue }
 
+    // Returns display text for this hobby tag.
     var title: String {
         rawValue.capitalized
     }
@@ -136,8 +146,10 @@ enum ConversationStyle: String, CaseIterable, Identifiable, Codable {
     case curious
     case analytical
 
+    // Returns the stable identifier for this conversation style.
     var id: String { rawValue }
 
+    // Returns display text for this conversation style.
     var title: String {
         rawValue.capitalized
     }
@@ -147,8 +159,10 @@ enum ResponseLength: String, CaseIterable, Identifiable, Codable {
     case short
     case medium
 
+    // Returns the stable identifier for this response length.
     var id: String { rawValue }
 
+    // Returns display text for this response length.
     var title: String {
         rawValue.capitalized
     }
@@ -161,8 +175,10 @@ enum AvoidTopicTag: String, CaseIterable, Identifiable, Codable {
     case personalFinance = "personal_finance"
     case dating
 
+    // Returns the stable identifier for this avoided-topic tag.
     var id: String { rawValue }
 
+    // Returns display text for this avoided-topic tag.
     var title: String {
         switch self {
         case .graphicViolence:

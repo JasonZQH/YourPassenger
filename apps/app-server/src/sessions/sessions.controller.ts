@@ -8,24 +8,28 @@ import { SessionsService } from './sessions.service';
 
 @Controller('sessions')
 export class SessionsController {
+  // Wires session routes with auth enforcement and session orchestration.
   constructor(
     private readonly sessionsService: SessionsService,
     private readonly authService: AuthService,
   ) {}
 
   @Post()
+  // Creates an authenticated user's session.
   async createSession(@Req() request: AuthenticatedRequest, @Body() body: CreateSessionBody) {
     const { accessToken, user } = await this.authService.requireAuth(request);
     return this.sessionsService.createSession(user.id, accessToken, body);
   }
 
   @Get(':id')
+  // Returns an authenticated user's session by id.
   async getSession(@Req() request: AuthenticatedRequest, @Param('id') sessionId: string) {
     const { user } = await this.authService.requireAuth(request);
     return this.sessionsService.getSession(user.id, sessionId);
   }
 
   @Post(':id/end')
+  // Ends an authenticated user's session by id.
   async endSession(
     @Req() request: AuthenticatedRequest,
     @Param('id') sessionId: string,
@@ -36,6 +40,7 @@ export class SessionsController {
   }
 
   @Get(':id/summary')
+  // Returns the summary for an authenticated user's session.
   async getSummary(@Req() request: AuthenticatedRequest, @Param('id') sessionId: string) {
     const { user } = await this.authService.requireAuth(request);
     return this.sessionsService.getSummary(user.id, sessionId);

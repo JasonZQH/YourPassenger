@@ -5,6 +5,7 @@ import { PrismaClient } from '../generated/prisma';
 
 @Injectable()
 export class ProfilePrismaService extends PrismaClient implements OnModuleDestroy {
+  // Configures Prisma with the profile service database URL.
   constructor(configService: ConfigService) {
     super({
       datasources: {
@@ -15,6 +16,7 @@ export class ProfilePrismaService extends PrismaClient implements OnModuleDestro
     });
   }
 
+  // Disconnects Prisma when the Nest module shuts down.
   async onModuleDestroy() {
     await this.$disconnect();
   }

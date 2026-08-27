@@ -17,8 +17,10 @@ import { SessionsPrismaService } from './sessions.prisma.service';
 
 @Injectable()
 export class SessionsRepository {
+  // Stores the Prisma client used for session persistence.
   constructor(private readonly prisma: SessionsPrismaService) {}
 
+  // Creates an active session and returns it with ordered turns.
   async createSession(userId: string): Promise<SessionRecord> {
     const session = await this.prisma.session.create({
       data: {
@@ -35,11 +37,13 @@ export class SessionsRepository {
     return this.toContract(session);
   }
 
+  // Loads an owned session by user and session id.
   async getSession(userId: string, sessionId: string): Promise<SessionRecord | null> {
     const session = await this.findOwnedSession(userId, sessionId);
     return session ? this.toContract(session) : null;
   }
 
+  // Persists the latest assistant state for an owned session.
   async updateAssistantState(
     userId: string,
     sessionId: string,
@@ -64,6 +68,7 @@ export class SessionsRepository {
     return this.getSession(userId, sessionId);
   }
 
+  // Atomically appends one turn and increments the session turn counter.
   async appendTurn(
     userId: string,
     sessionId: string,
@@ -114,6 +119,7 @@ export class SessionsRepository {
     return this.getSession(userId, sessionId);
   }
 
+  // Atomically records a realtime user/assistant turn pair.
   async commitRealtimeTurn(
     userId: string,
     sessionId: string,
@@ -174,6 +180,7 @@ export class SessionsRepository {
     return this.getSession(userId, sessionId);
   }
 
+  // Marks a session ended and upserts its summary.
   async endSession(
     userId: string,
     sessionId: string,
@@ -228,6 +235,7 @@ export class SessionsRepository {
     return this.getSession(userId, sessionId);
   }
 
+  // Returns the stored summary for an owned session.
   async getSummary(userId: string, sessionId: string): Promise<SessionSummary | null> {
     const ownedSession = await this.prisma.session.findFirst({
       where: {
@@ -246,6 +254,7 @@ export class SessionsRepository {
     return summary ? this.toSummary(summary) : null;
   }
 
+  // Creates or updates the stored summary for an owned session.
   async upsertSummary(
     userId: string,
     sessionId: string,
@@ -282,6 +291,7 @@ export class SessionsRepository {
     return this.toSummary(stored);
   }
 
+  // Finds a session by id only when it belongs to the user.
   private async findOwnedSession(userId: string, sessionId: string) {
     return this.prisma.session.findFirst({
       where: {
@@ -296,6 +306,7 @@ export class SessionsRepository {
     });
   }
 
+  // Converts a Prisma session with turns into the shared session contract.
   private toContract(
     session: SessionModel & {
       turns: SessionTurnModel[];
@@ -316,6 +327,7 @@ export class SessionsRepository {
     };
   }
 
+  // Converts a Prisma summary record into the shared summary contract.
   private toSummary(summary: SessionSummaryModel): SessionSummary {
     return {
       sessionId: summary.sessionId,

@@ -7,11 +7,13 @@ import { DownstreamHttpService } from './downstream-http.service';
 
 @Injectable()
 export class AppServerReadinessProbe implements ReadinessProbe {
+  // Wires downstream config and HTTP transport for readiness checks.
   constructor(
     private readonly downstreamConfig: DownstreamConfigService,
     private readonly downstreamHttp: DownstreamHttpService,
   ) {}
 
+  // Checks readiness for each required downstream service.
   async check(): Promise<ReadinessCheck[]> {
     const checks = await Promise.all([
       this.checkService('auth-service', this.downstreamConfig.getAuthServiceBaseUrl()),
@@ -32,6 +34,7 @@ export class AppServerReadinessProbe implements ReadinessProbe {
     return checks;
   }
 
+  // Checks a single downstream service readiness endpoint.
   private async checkService(name: string, baseUrl: string): Promise<ReadinessCheck> {
     try {
       await this.downstreamHttp.get(baseUrl, '/health/ready');

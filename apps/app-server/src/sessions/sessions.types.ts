@@ -7,11 +7,3 @@ export interface PublicSessionView {
   endedAt?: string;
   latestAssistantState: SessionRecord['latestAssistantState'];
 }
-
-export interface CreateSessionResponse {
-  session: Pick<PublicSessionView, 'id' | 'status' | 'startedAt'>;
-  realtime: {
-    wsUrl: string;
-    token: string;
-  };
-}

@@ -15,6 +15,7 @@ import type { RealtimeConnectionContext } from './realtime.types';
 
 @Injectable()
 export class RealtimeOrchestratorService {
+  // Wires auth, session, profile, and conversation services for realtime turns.
   constructor(
     private readonly authService: AuthService,
     private readonly sessionsService: SessionsService,
@@ -22,6 +23,7 @@ export class RealtimeOrchestratorService {
     private readonly conversationService: ConversationClientService,
   ) {}
 
+  // Authenticates a realtime connection and loads its initial context.
   async bootstrapConnection(
     accessToken: string,
     sessionId: string,
@@ -38,6 +40,7 @@ export class RealtimeOrchestratorService {
     };
   }
 
+  // Routes client realtime events into server events.
   async handleEvent(
     connection: RealtimeConnectionContext,
     event: ClientRealtimeEvent,
@@ -83,6 +86,7 @@ export class RealtimeOrchestratorService {
     }
   }
 
+  // Builds, stores, and emits a realtime assistant response for committed audio.
   private async handleAudioCommit(
     connection: RealtimeConnectionContext,
     rawUtterance?: string,
@@ -138,6 +142,7 @@ export class RealtimeOrchestratorService {
     ];
   }
 
+  // Updates the in-memory session assistant state for this connection.
   private setLocalAssistantState(
     connection: RealtimeConnectionContext,
     state: 'listening' | 'thinking' | 'speaking' | 'idle',

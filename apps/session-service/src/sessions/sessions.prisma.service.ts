@@ -5,6 +5,7 @@ import { PrismaClient } from '../generated/prisma';
 
 @Injectable()
 export class SessionsPrismaService extends PrismaClient implements OnModuleDestroy {
+  // Configures Prisma with the session service database URL.
   constructor(configService: ConfigService) {
     super({
       datasources: {
@@ -15,6 +16,7 @@ export class SessionsPrismaService extends PrismaClient implements OnModuleDestr
     });
   }
 
+  // Disconnects Prisma when the Nest module shuts down.
   async onModuleDestroy() {
     await this.$disconnect();
   }

@@ -25,11 +25,13 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
   private readonly connections = new Map<WebSocket, RealtimeConnectionContext>();
   private upgradeHandler?: (request: IncomingMessage, socket: any, head: Buffer) => void;
 
+  // Wires HTTP upgrade handling with realtime orchestration.
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
     private readonly realtimeOrchestrator: RealtimeOrchestratorService,
   ) {}
 
+  // Registers websocket upgrade handling for the realtime endpoint.
   onModuleInit() {
     const httpServer = this.httpAdapterHost.httpAdapter?.getHttpServer();
     if (!httpServer) {
@@ -54,6 +56,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     httpServer.on('upgrade', this.upgradeHandler);
   }
 
+  // Removes websocket handlers and closes active connections.
   onModuleDestroy() {
     const httpServer = this.httpAdapterHost.httpAdapter?.getHttpServer();
     if (httpServer && this.upgradeHandler) {
@@ -67,6 +70,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     this.wsServer.close();
   }
 
+  // Authenticates a websocket and attaches message handling for a session.
   private async handleConnection(socket: WebSocket, request: IncomingMessage) {
     const sessionId = this.extractSessionId(request);
     if (!sessionId) {
@@ -141,6 +145,7 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // Parses and dispatches one websocket message into realtime server events.
   private async handleMessage(socket: WebSocket, raw: WebSocket.RawData) {
     const connection = this.connections.get(socket);
     if (!connection) {
@@ -194,15 +199,18 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // Serializes a realtime server event onto the websocket.
   private send(socket: WebSocket, event: ServerRealtimeEvent) {
     socket.send(JSON.stringify(event));
   }
 
+  // Extracts the session id from the websocket query string.
   private extractSessionId(request: IncomingMessage): string | null {
     const url = new URL(request.url ?? '/', 'http://localhost');
     return url.searchParams.get('sessionId');
   }
 
+  // Extracts the raw bearer token from an Authorization header.
   private extractBearerToken(authorizationHeader?: string | string[]): string | null {
     const headerValue = Array.isArray(authorizationHeader)
       ? authorizationHeader[0]

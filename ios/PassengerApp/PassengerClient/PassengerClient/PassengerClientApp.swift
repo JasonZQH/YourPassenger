@@ -11,6 +11,7 @@ import SwiftUI
 struct PassengerApp: App {
     @StateObject private var appViewModel = AppViewModel(apiClient: BackendAPIClient())
 
+    // Creates the app window and bootstraps shared app state.
     var body: some Scene {
         WindowGroup {
             RootView()

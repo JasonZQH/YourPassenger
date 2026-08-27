@@ -28,6 +28,7 @@ interface ConversationHotPathGrpcClient {
 export class ConversationClientService implements OnModuleInit {
   private grpcHotPathClient!: ConversationHotPathGrpcClient;
 
+  // Wires gRPC and HTTP clients for conversation service access.
   constructor(
     @Inject(CONVERSATION_HOT_PATH_CLIENT)
     private readonly conversationGrpcClient: ClientGrpc,
@@ -35,12 +36,14 @@ export class ConversationClientService implements OnModuleInit {
     private readonly downstreamHttp: DownstreamHttpService,
   ) {}
 
+  // Resolves the typed gRPC hot-path client after module initialization.
   onModuleInit() {
     this.grpcHotPathClient = this.conversationGrpcClient.getService<ConversationHotPathGrpcClient>(
       CONVERSATION_HOT_PATH_SERVICE,
     );
   }
 
+  // Requests a general assistant reply over HTTP.
   async buildAssistantReply(body: BuildAssistantReplyBody): Promise<AssistantReply> {
     return this.downstreamHttp.post<AssistantReply>(
       this.downstreamConfig.getConversationServiceBaseUrl(),
@@ -49,6 +52,7 @@ export class ConversationClientService implements OnModuleInit {
     );
   }
 
+  // Builds a realtime turn over the gRPC hot path.
   async buildRealtimeTurn(body: BuildRealtimeTurnBody): Promise<RealtimeTurnResponse> {
     const response = await firstValueFrom(
       this.grpcHotPathClient.buildRealtimeTurn(this.toGrpcRealtimeTurnRequest(body)),
@@ -61,6 +65,7 @@ export class ConversationClientService implements OnModuleInit {
     };
   }
 
+  // Requests a conversation summary over HTTP.
   async buildSummary(body: BuildConversationSummaryBody): Promise<ConversationSummary> {
     return this.downstreamHttp.post<ConversationSummary>(
       this.downstreamConfig.getConversationServiceBaseUrl(),
@@ -69,6 +74,7 @@ export class ConversationClientService implements OnModuleInit {
     );
   }
 
+  // Converts the shared realtime-turn body into the gRPC request shape.
   private toGrpcRealtimeTurnRequest(body: BuildRealtimeTurnBody): GrpcBuildRealtimeTurnRequest {
     return {
       utterance: body.utterance,

@@ -8,11 +8,13 @@ import type { AuthContext, AuthenticatedRequest } from './auth.types';
 
 @Injectable()
 export class AuthService {
+  // Wires downstream auth/profile services for app-server auth projection.
   constructor(
     private readonly downstreamConfig: DownstreamConfigService,
     private readonly downstreamHttp: DownstreamHttpService,
   ) {}
 
+  // Proxies Apple sign-in and enriches the user with profile state.
   async signInWithApple(identityToken: string): Promise<AuthResponse> {
     const response = await this.downstreamHttp.post<AuthResponse>(
       this.downstreamConfig.getAuthServiceBaseUrl(),
@@ -23,6 +25,7 @@ export class AuthService {
     return this.withProfileProjection(response);
   }
 
+  // Proxies guest sign-in and enriches the user with profile state.
   async signInAsGuest(): Promise<AuthResponse> {
     const response = await this.downstreamHttp.post<AuthResponse>(
       this.downstreamConfig.getAuthServiceBaseUrl(),
@@ -32,11 +35,13 @@ export class AuthService {
     return this.withProfileProjection(response);
   }
 
+  // Resolves the current authenticated user from the request.
   async getCurrentUser(request: AuthenticatedRequest): Promise<CurrentUserView> {
     const { user } = await this.requireAuth(request);
     return user;
   }
 
+  // Requires bearer auth and caches the resolved auth context.
   async requireAuth(request: AuthenticatedRequest): Promise<AuthContext> {
     if (request.authContext) {
       return request.authContext;
@@ -53,6 +58,7 @@ export class AuthService {
     return authContext;
   }
 
+  // Validates an access token by asking the auth service for the current user.
   async authenticateAccessToken(accessToken: string): Promise<CurrentUserView> {
     const downstreamUser = await this.downstreamHttp.get<CurrentUserView>(
       this.downstreamConfig.getAuthServiceBaseUrl(),
@@ -65,6 +71,7 @@ export class AuthService {
     return this.attachProfileProjection(downstreamUser);
   }
 
+  // Replaces the auth response user with a profile-aware projection.
   private async withProfileProjection(response: AuthResponse): Promise<AuthResponse> {
     return {
       ...response,
@@ -72,6 +79,7 @@ export class AuthService {
     };
   }
 
+  // Adds nickname and completion state from the profile service.
   private async attachProfileProjection(user: CurrentUserView): Promise<CurrentUserView> {
     const profile = await this.getProfile(user.id);
     return {
@@ -81,6 +89,7 @@ export class AuthService {
     };
   }
 
+  // Loads a user profile through the profile service.
   private async getProfile(userId: string): Promise<UserProfile | null> {
     return this.downstreamHttp.get<UserProfile | null>(
       this.downstreamConfig.getProfileServiceBaseUrl(),
@@ -88,6 +97,7 @@ export class AuthService {
     );
   }
 
+  // Extracts the raw bearer token from an Authorization header.
   private extractBearerToken(authorizationHeader?: string | string[]): string | null {
     const headerValue = Array.isArray(authorizationHeader)
       ? authorizationHeader[0]

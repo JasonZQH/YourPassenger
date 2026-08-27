@@ -14,16 +14,19 @@ import { ConversationService } from './conversation.service';
 
 @Controller()
 export class ConversationGrpcController {
+  // Wires gRPC requests to the conversation service.
   constructor(private readonly conversationService: ConversationService) {}
 
   @GrpcMethod(CONVERSATION_HOT_PATH_SERVICE, 'BuildRealtimeTurn')
-  buildRealtimeTurn(request: GrpcBuildRealtimeTurnRequest): GrpcRealtimeTurnReply {
-    const response = this.conversationService.buildRealtimeTurn(
+  // Handles the realtime-turn gRPC method.
+  async buildRealtimeTurn(request: GrpcBuildRealtimeTurnRequest): Promise<GrpcRealtimeTurnReply> {
+    const response = await this.conversationService.buildRealtimeTurn(
       this.toRealtimeTurnBody(request),
     );
     return this.toGrpcResponse(response);
   }
 
+  // Converts the gRPC realtime-turn request into the shared service body.
   private toRealtimeTurnBody(request: GrpcBuildRealtimeTurnRequest): BuildRealtimeTurnBody {
     return {
       utterance: request.utterance,
@@ -60,6 +63,7 @@ export class ConversationGrpcController {
     };
   }
 
+  // Converts the shared realtime-turn response into the gRPC reply shape.
   private toGrpcResponse(response: RealtimeTurnResponse): GrpcRealtimeTurnReply {
     return {
       transcriptText: response.transcriptText,

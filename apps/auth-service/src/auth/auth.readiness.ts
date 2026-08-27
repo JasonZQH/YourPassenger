@@ -6,8 +6,10 @@ import { AuthPrismaService } from './auth.prisma.service';
 
 @Injectable()
 export class AuthReadinessProbe implements ReadinessProbe {
+  // Stores the auth database client used for readiness checks.
   constructor(private readonly prisma: AuthPrismaService) {}
 
+  // Checks whether the auth database can answer a simple query.
   async check(): Promise<ReadinessCheck[]> {
     try {
       await this.prisma.$queryRawUnsafe('SELECT 1');

@@ -12,6 +12,7 @@ import { AuthService } from '../auth/auth.service';
 import { ConversationClientService } from '../conversation/conversation.service';
 import { ProfileController } from '../profile/profile.controller';
 import { ProfileService } from '../profile/profile.service';
+import { ChatAgentClientService } from '../sessions/chat-agent-client.service';
 import { SessionsController } from '../sessions/sessions.controller';
 import { SessionsService } from '../sessions/sessions.service';
 import { DownstreamConfigService } from './downstream-config.service';
@@ -48,6 +49,7 @@ import { AppServerReadinessProbe } from './http.readiness';
     DownstreamHttpService,
     AppServerReadinessProbe,
     AuthService,
+    ChatAgentClientService,
     ConversationClientService,
     ProfileService,
     SessionsService,
@@ -57,6 +59,7 @@ import { AppServerReadinessProbe } from './http.readiness';
     DownstreamHttpService,
     AppServerReadinessProbe,
     AuthService,
+    ChatAgentClientService,
     ConversationClientService,
     ProfileService,
     SessionsService,
