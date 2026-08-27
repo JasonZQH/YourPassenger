@@ -15,11 +15,13 @@ final class AppViewModel: ObservableObject {
     private let apiClient: APIClient
     private static let passengerNameStorageKey = "yourpassenger.dev.passengerName"
 
+    // Initializes app state with the API client and stored passenger name.
     init(apiClient: APIClient) {
         self.apiClient = apiClient
         self.passengerName = Self.loadPassengerName()
     }
 
+    // Loads initial auth and profile state from the backend.
     func bootstrap() async {
         errorMessage = nil
         passengerName = Self.loadPassengerName()
@@ -39,6 +41,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    // Signs in with the selected auth method and routes to the next screen.
     func signIn(with method: AuthMethod) async {
         isBusy = true
         errorMessage = nil
@@ -54,6 +57,7 @@ final class AppViewModel: ObservableObject {
         isBusy = false
     }
 
+    // Saves the first profile and moves into passenger naming.
     func completeOnboardingForCreate(with profile: UserProfile) async {
         isBusy = true
         errorMessage = nil
@@ -68,6 +72,7 @@ final class AppViewModel: ObservableObject {
         isBusy = false
     }
 
+    // Saves edits to an existing profile and returns home.
     func saveProfileChanges(with profile: UserProfile) async {
         isBusy = true
         errorMessage = nil
@@ -82,6 +87,7 @@ final class AppViewModel: ObservableObject {
         isBusy = false
     }
 
+    // Stores the chosen passenger name and returns to the home screen.
     func completePassengerNaming(with name: String) {
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = normalized.isEmpty ? "Passenger" : normalized
@@ -91,14 +97,17 @@ final class AppViewModel: ObservableObject {
         screen = .home
     }
 
+    // Opens the profile editing screen.
     func openProfile() {
         screen = .profile
     }
 
+    // Closes profile editing and returns home.
     func closeProfile() {
         screen = .home
     }
 
+    // Starts a new backend chat session and opens live chat.
     func startChat() async {
         isBusy = true
         errorMessage = nil
@@ -113,6 +122,7 @@ final class AppViewModel: ObservableObject {
         isBusy = false
     }
 
+    // Ends the active chat session and opens the summary screen.
     func endChat() async {
         guard let activeSession else { return }
 
@@ -130,16 +140,19 @@ final class AppViewModel: ObservableObject {
         isBusy = false
     }
 
+    // Clears the summary and starts another chat session.
     func startNewChatFromSummary() async {
         latestSummary = nil
         await startChat()
     }
 
+    // Clears transient summary state and returns to home.
     func returnHome() {
         latestSummary = nil
         screen = .home
     }
 
+    // Loads the persisted passenger name with a default fallback.
     private static func loadPassengerName() -> String {
         let value = UserDefaults.standard.string(forKey: passengerNameStorageKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

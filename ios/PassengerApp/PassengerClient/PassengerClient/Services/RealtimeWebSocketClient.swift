@@ -4,6 +4,7 @@ enum RealtimeClientError: LocalizedError {
     case notConnected
     case invalidMessage
 
+    // Describes websocket realtime client failures for UI and debug output.
     var errorDescription: String? {
         switch self {
         case .notConnected:
@@ -35,12 +36,14 @@ final class RealtimeWebSocketClient {
     private var task: URLSessionWebSocketTask?
     private var eventHandler: ((RealtimeServerEvent) -> Void)?
 
+    // Initializes a websocket realtime client with connection credentials.
     init(url: URL, token: String, session: URLSession = .shared) {
         self.url = url
         self.token = token
         self.session = session
     }
 
+    // Opens the websocket and starts receiving server events.
     func connect(onEvent: @escaping (RealtimeServerEvent) -> Void) async throws {
         var request = URLRequest(url: url)
         if !token.isEmpty {
@@ -54,11 +57,13 @@ final class RealtimeWebSocketClient {
         receiveNext()
     }
 
+    // Closes the websocket connection.
     func disconnect() {
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
     }
 
+    // Sends a text-backed audio commit event.
     func sendAudioCommit(text: String) async throws {
         struct AudioCommitRequest: Encodable {
             let type = "audio.commit"
@@ -68,6 +73,7 @@ final class RealtimeWebSocketClient {
         try await send(AudioCommitRequest(text: text))
     }
 
+    // Sends an interrupt request for current assistant speech.
     func sendInterrupt() async throws {
         struct InterruptRequest: Encodable {
             let type = "assistant.interrupt"
@@ -76,6 +82,7 @@ final class RealtimeWebSocketClient {
         try await send(InterruptRequest())
     }
 
+    // Encodes and sends a realtime client event over the websocket.
     private func send<Body: Encodable>(_ body: Body) async throws {
         guard let task else {
             throw RealtimeClientError.notConnected
@@ -86,6 +93,7 @@ final class RealtimeWebSocketClient {
         try await task.send(.string(text))
     }
 
+    // Receives the next websocket message and schedules continued reads.
     private func receiveNext() {
         task?.receive { [weak self] result in
             guard let self else { return }
@@ -108,6 +116,7 @@ final class RealtimeWebSocketClient {
         }
     }
 
+    // Decodes one websocket message into a typed realtime server event.
     private func decode(message: URLSessionWebSocketTask.Message) throws -> RealtimeServerEvent {
         let data: Data
 

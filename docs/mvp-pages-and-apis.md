@@ -248,11 +248,35 @@ Response:
     "startedAt": "2026-04-20T00:00:00.000Z"
   },
   "realtime": {
+    "transport": "websocket",
     "wsUrl": "ws://localhost:3000/v1/realtime?sessionId=ses_123",
     "token": "token"
   }
 }
 ```
+
+If `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` are configured on
+`app-server`, the realtime payload switches to LiveKit:
+
+```json
+{
+  "session": {
+    "id": "ses_123",
+    "status": "active",
+    "startedAt": "2026-04-20T00:00:00.000Z"
+  },
+  "realtime": {
+    "transport": "livekit",
+    "livekitUrl": "wss://your-livekit-host",
+    "roomName": "yp_ses_ses_123",
+    "participantToken": "scoped-livekit-jwt"
+  }
+}
+```
+
+The WebSocket response remains the local fallback and debug transport.
+When the LiveKit response is used, `app-server` also dispatches
+`chat-agent-service` to join the same room as `agent_<sessionId>`.
 
 #### `GET /v1/sessions/:id`
 

@@ -32,6 +32,7 @@ export const READINESS_PROBE = Symbol('READINESS_PROBE');
 
 @Injectable()
 class AlwaysReadyProbe implements ReadinessProbe {
+  // Reports the process as ready when no service-specific probe is provided.
   async check(): Promise<ReadinessCheck[]> {
     return [{ name: 'process', status: 'up' }];
   }
@@ -39,11 +40,13 @@ class AlwaysReadyProbe implements ReadinessProbe {
 
 @Injectable()
 class HealthService {
+  // Stores service metadata and the optional readiness probe.
   constructor(
     @Inject(SERVICE_METADATA) private readonly metadata: ServiceMetadata,
     @Optional() @Inject(READINESS_PROBE) private readonly readinessProbe?: ReadinessProbe,
   ) {}
 
+  // Builds the liveness response for this service process.
   live() {
     return {
       status: 'ok',
@@ -53,6 +56,7 @@ class HealthService {
     };
   }
 
+  // Builds the readiness response and throws when any check is down.
   async ready() {
     const checks = (await this.readinessProbe?.check()) ?? [];
     const failed = checks.filter((check) => check.status === 'down');
@@ -74,14 +78,17 @@ class HealthService {
 
 @Controller('health')
 class HealthController {
+  // Wires health endpoints to the health service.
   constructor(private readonly healthService: HealthService) {}
 
   @Get('live')
+  // Returns the liveness endpoint payload.
   getLive() {
     return this.healthService.live();
   }
 
   @Get('ready')
+  // Returns the readiness endpoint payload.
   async getReady() {
     return this.healthService.ready();
   }
@@ -89,6 +96,7 @@ class HealthController {
 
 @Module({})
 export class ServicePlatformModule {
+  // Registers shared config, health endpoints, metadata, and readiness providers.
   static register(options: {
     serviceName: string;
     version?: string;

@@ -4,6 +4,7 @@ enum OnboardingMode {
     case create
     case edit
 
+    // Returns the screen title for create or edit mode.
     var title: String {
         switch self {
         case .create:
@@ -13,6 +14,7 @@ enum OnboardingMode {
         }
     }
 
+    // Returns the screen subtitle for create or edit mode.
     var subtitle: String {
         switch self {
         case .create:
@@ -31,6 +33,7 @@ struct OnboardingView: View {
 
     private let grid = [GridItem(.adaptive(minimum: 120), spacing: 10)]
 
+    // Renders the profile onboarding and editing form.
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
@@ -106,16 +109,19 @@ struct OnboardingView: View {
         }
     }
 
+    // Returns whether the current draft can be submitted.
     private var isValid: Bool {
         !draft.nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    // Returns the profile draft with trimmed user-entered text.
     private var normalizedDraft: UserProfile {
         var profile = draft
         profile.nickname = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
         return profile
     }
 
+    // Renders a selectable chip grid for a profile tag group.
     private func chipSection<T: Identifiable & CaseIterable & Hashable>(
         title: String,
         items: T.AllCases,
@@ -138,6 +144,7 @@ struct OnboardingView: View {
         }
     }
 
+    // Renders a menu picker section for a profile enum field.
     private func pickerSection<T: Identifiable & CaseIterable>(title: String, selection: Binding<T>) -> some View where T.AllCases: RandomAccessCollection, T: Hashable, T: TitleConvertible {
         PassengerCard {
             VStack(alignment: .leading, spacing: 16) {
@@ -154,6 +161,7 @@ struct OnboardingView: View {
         }
     }
 
+    // Toggles an interest tag in the draft profile.
     private func toggle(_ item: InterestTag) {
         if draft.interests.contains(item) {
             draft.interests.remove(item)
@@ -162,6 +170,7 @@ struct OnboardingView: View {
         }
     }
 
+    // Toggles a hobby tag in the draft profile.
     private func toggle(_ item: HobbyTag) {
         if draft.hobbyTags.contains(item) {
             draft.hobbyTags.remove(item)
@@ -170,6 +179,7 @@ struct OnboardingView: View {
         }
     }
 
+    // Toggles an avoided-topic tag in the draft profile.
     private func toggle(_ item: AvoidTopicTag) {
         if draft.avoidTopicTags.contains(item) {
             draft.avoidTopicTags.remove(item)
@@ -180,6 +190,7 @@ struct OnboardingView: View {
 }
 
 protocol TitleConvertible {
+    // Returns user-facing text for picker and chip options.
     var title: String { get }
 }
 

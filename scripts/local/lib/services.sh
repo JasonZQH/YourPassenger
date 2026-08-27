@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 
-SERVICES=(auth-service profile-service session-service conversation-service app-server)
+SERVICES=(auth-service profile-service session-service conversation-service chat-agent-service app-server)
 DB_SERVICES=(auth-service profile-service session-service)
 
 trim_whitespace() {
@@ -12,7 +12,7 @@ trim_whitespace() {
 
 validate_service_name() {
   case "$1" in
-    auth-service|profile-service|session-service|conversation-service|app-server) return 0 ;;
+    auth-service|profile-service|session-service|conversation-service|chat-agent-service|app-server) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -88,7 +88,7 @@ populate_active_services_buffer() {
 assert_valid_skip_configuration() {
   local dependency
   if ! service_skipped "app-server"; then
-    for dependency in auth-service profile-service session-service conversation-service; do
+    for dependency in auth-service profile-service session-service conversation-service chat-agent-service; do
       if service_skipped "$dependency"; then
         echo "Invalid SKIP configuration: app-server depends on $dependency. Skip app-server as well or keep $dependency enabled." >&2
         return 1
@@ -103,6 +103,7 @@ workspace_for_service() {
     profile-service) echo "@yourpassenger/profile-service" ;;
     session-service) echo "@yourpassenger/session-service" ;;
     conversation-service) echo "@yourpassenger/conversation-service" ;;
+    chat-agent-service) echo "@yourpassenger/chat-agent-service" ;;
     app-server) echo "@yourpassenger/app-server" ;;
     *)
       echo "Unknown service: $1" >&2
@@ -117,6 +118,7 @@ port_for_service() {
     profile-service) echo "$PROFILE_SERVICE_PORT" ;;
     session-service) echo "$SESSION_SERVICE_PORT" ;;
     conversation-service) echo "$CONVERSATION_SERVICE_PORT" ;;
+    chat-agent-service) echo "$CHAT_AGENT_SERVICE_PORT" ;;
     app-server) echo "$APP_SERVER_PORT" ;;
     *)
       echo "Unknown service: $1" >&2

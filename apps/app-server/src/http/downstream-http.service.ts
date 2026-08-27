@@ -28,15 +28,18 @@ export class DownstreamHttpService implements OnModuleDestroy {
     keepAliveMsecs: 1000,
   });
 
+  // Destroys pooled HTTP agents when the module shuts down.
   onModuleDestroy() {
     this.httpAgent.destroy();
     this.httpsAgent.destroy();
   }
 
+  // Sends a JSON GET request to a downstream service.
   async get<T>(baseUrl: string, path: string, headers?: Record<string, string>): Promise<T> {
     return this.request<T>(baseUrl, path, 'GET', undefined, headers);
   }
 
+  // Sends a JSON POST request to a downstream service.
   async post<T>(
     baseUrl: string,
     path: string,
@@ -46,6 +49,7 @@ export class DownstreamHttpService implements OnModuleDestroy {
     return this.request<T>(baseUrl, path, 'POST', body, headers);
   }
 
+  // Sends a JSON PUT request to a downstream service.
   async put<T>(
     baseUrl: string,
     path: string,
@@ -55,6 +59,7 @@ export class DownstreamHttpService implements OnModuleDestroy {
     return this.request<T>(baseUrl, path, 'PUT', body, headers);
   }
 
+  // Performs the low-level HTTP request and parses the JSON response.
   private async request<T>(
     baseUrl: string,
     path: string,
@@ -123,12 +128,14 @@ export class DownstreamHttpService implements OnModuleDestroy {
     });
   }
 
+  // Joins a base URL and API path without duplicating slashes.
   private joinUrl(baseUrl: string, path: string): string {
     const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     return `${normalizedBaseUrl}${normalizedPath}`;
   }
 
+  // Parses a response body as JSON or wraps plain text as a message.
   private parsePayload(text: string): unknown {
     const trimmed = text.trim();
     if (!trimmed) {
@@ -142,6 +149,7 @@ export class DownstreamHttpService implements OnModuleDestroy {
     }
   }
 
+  // Converts downstream failure status codes into Nest HTTP exceptions.
   private toHttpException(statusCode: number, payload: unknown): HttpException {
     const responseBody =
       payload && typeof payload === 'object'

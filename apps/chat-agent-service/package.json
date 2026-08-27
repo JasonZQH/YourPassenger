@@ -1,0 +1,24 @@
+{
+  "name": "@yourpassenger/chat-agent-service",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/apps/chat-agent-service/src/main.js",
+    "start:dev": "ts-node -r tsconfig-paths/register --project tsconfig.json src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@livekit/rtc-node": "^0.13.24",
+    "@nestjs/common": "^11.1.19",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.19",
+    "@nestjs/platform-express": "^11.1.19",
+    "@yourpassenger/contracts": "file:../../packages/contracts",
+    "@yourpassenger/platform": "file:../../packages/platform",
+    "livekit-server-sdk": "^2.15.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  }
+}

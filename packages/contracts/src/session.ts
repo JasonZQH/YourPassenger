@@ -31,6 +31,42 @@ export interface SessionSummary {
   memoryCandidates: string[];
 }
 
+export interface WebSocketRealtimeConnection {
+  transport: 'websocket';
+  wsUrl: string;
+  token: string;
+}
+
+export interface LiveKitRealtimeConnection {
+  transport: 'livekit';
+  livekitUrl: string;
+  roomName: string;
+  participantToken: string;
+}
+
+export type SessionRealtimeConnection =
+  | WebSocketRealtimeConnection
+  | LiveKitRealtimeConnection;
+
+export interface CreateSessionResponse {
+  session: Pick<SessionRecord, 'id' | 'status' | 'startedAt'>;
+  realtime: SessionRealtimeConnection;
+}
+
+export interface DispatchChatAgentBody {
+  sessionId: string;
+  roomName: string;
+  userId: string;
+}
+
+export interface DispatchChatAgentResponse {
+  sessionId: string;
+  roomName: string;
+  agentIdentity: string;
+  status: 'joining' | 'joined' | 'failed' | 'disconnected';
+  connectedAt?: string;
+}
+
 export interface OwnedSessionQuery {
   userId: string;
 }

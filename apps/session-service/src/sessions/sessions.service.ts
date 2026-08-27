@@ -24,16 +24,19 @@ import { SessionsRepository } from './sessions.repository';
 export class SessionsService {
   private readonly logger = new Logger(SessionsService.name);
 
+  // Wires persistence and downstream clients used by session workflows.
   constructor(
     private readonly sessionsRepository: SessionsRepository,
     private readonly profileClientService: ProfileClientService,
     private readonly conversationClientService: ConversationClientService,
   ) {}
 
+  // Creates a new active session owned by the provided user.
   async createSession(body: CreateOwnedSessionBody): Promise<SessionRecord> {
     return this.sessionsRepository.createSession(body.userId);
   }
 
+  // Loads an owned session or raises a not-found error.
   async getSession(userId: string, sessionId: string): Promise<SessionRecord> {
     const session = await this.sessionsRepository.getSession(userId, sessionId);
     if (!session) {
@@ -43,6 +46,7 @@ export class SessionsService {
     return session;
   }
 
+  // Ends a session and persists either provided or generated summary data.
   async endSession(sessionId: string, body: EndOwnedSessionBody) {
     const session = await this.sessionsRepository.getSession(body.userId, sessionId);
     if (!session) {
@@ -65,6 +69,7 @@ export class SessionsService {
     };
   }
 
+  // Returns a stored summary or creates a fallback summary if needed.
   async getSummary(userId: string, sessionId: string): Promise<SessionSummary> {
     const stored = await this.sessionsRepository.getSummary(userId, sessionId);
     if (stored) {
@@ -84,6 +89,7 @@ export class SessionsService {
     return generatedSummary;
   }
 
+  // Appends a single conversation turn to an owned session.
   async appendTurn(
     sessionId: string,
     body: AppendSessionTurnBody,
@@ -101,6 +107,7 @@ export class SessionsService {
     return session;
   }
 
+  // Persists a user transcript and assistant reply as one realtime turn.
   async commitRealtimeTurn(
     sessionId: string,
     body: CommitRealtimeTurnBody,
@@ -119,6 +126,7 @@ export class SessionsService {
     return session;
   }
 
+  // Updates the latest assistant state recorded for the session.
   async updateAssistantState(
     sessionId: string,
     body: UpdateAssistantStateBody,
@@ -135,6 +143,7 @@ export class SessionsService {
     return session;
   }
 
+  // Creates or replaces the summary for an owned session.
   async upsertSummary(
     sessionId: string,
     body: UpsertSessionSummaryBody,
@@ -151,6 +160,7 @@ export class SessionsService {
     return summary;
   }
 
+  // Normalizes summary input into a summary bound to the current session id.
   private withSessionId(
     sessionId: string,
     summary: SessionSummaryInput,
@@ -164,6 +174,7 @@ export class SessionsService {
     };
   }
 
+  // Builds a local summary when the conversation service is unavailable.
   private buildFallbackSummary(session: SessionRecord): SessionSummaryInput {
     const firstUserTurn = session.turns.find((turn) => turn.role === 'user')?.text?.trim();
     const summarySource =
@@ -177,6 +188,7 @@ export class SessionsService {
     };
   }
 
+  // Requests an AI-generated summary using profile and session context.
   private async buildSummaryInput(
     userId: string,
     session: SessionRecord,
@@ -197,6 +209,7 @@ export class SessionsService {
     }
   }
 
+  // Calculates elapsed session time in seconds.
   private getDurationSeconds(session: SessionRecord): number {
     const startedAt = new Date(session.startedAt).getTime();
     const endedAt = new Date(session.endedAt ?? new Date().toISOString()).getTime();

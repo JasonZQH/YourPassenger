@@ -8,6 +8,7 @@ import {
 
 import { AppModule } from './app.module';
 
+// Starts the conversation HTTP service and its gRPC hot-path server.
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
