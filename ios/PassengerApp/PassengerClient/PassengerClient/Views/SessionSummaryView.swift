@@ -4,6 +4,7 @@ struct SessionSummaryView: View {
     @EnvironmentObject private var appViewModel: AppViewModel
     let summary: SessionSummary
 
+    // Renders the session summary and follow-up actions.
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Spacer()
@@ -61,6 +62,7 @@ struct SessionSummaryView: View {
 struct FlowingTopicsView: View {
     let topics: [String]
 
+    // Renders summary topics as adaptive chips.
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], alignment: .leading, spacing: 10) {
             ForEach(topics, id: \.self) { topic in

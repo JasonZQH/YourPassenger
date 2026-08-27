@@ -1,0 +1,189 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: yourpassenger-local-postgres
+    environment:
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-db_user}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-db_password}
+      POSTGRES_DB: postgres
+    ports:
+      - "${DOCKER_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-db_user} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - yourpassenger-local-postgres:/var/lib/postgresql/data
+
+  auth-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/auth-service"]
+    environment:
+      AUTH_SERVICE_PORT: "3101"
+      AUTH_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-db_user}:${LOCAL_POSTGRES_PASSWORD:-db_password}@postgres:5432/yourpassenger_auth?schema=public"
+      AUTH_TOKEN_SECRET: "${AUTH_TOKEN_SECRET}"
+    ports:
+      - "${AUTH_SERVICE_PORT:-3101}:3101"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  profile-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/profile-service"]
+    environment:
+      PROFILE_SERVICE_PORT: "3102"
+      PROFILE_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-db_user}:${LOCAL_POSTGRES_PASSWORD:-db_password}@postgres:5432/yourpassenger_profile?schema=public"
+    ports:
+      - "${PROFILE_SERVICE_PORT:-3102}:3102"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3102/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  session-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/session-service"]
+    environment:
+      SESSION_SERVICE_PORT: "3103"
+      SESSION_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-db_user}:${LOCAL_POSTGRES_PASSWORD:-db_password}@postgres:5432/yourpassenger_session?schema=public"
+      PROFILE_SERVICE_BASE_URL: "http://profile-service:3102"
+      CONVERSATION_SERVICE_BASE_URL: "http://conversation-service:3104"
+    ports:
+      - "${SESSION_SERVICE_PORT:-3103}:3103"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3103/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  conversation-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/conversation-service"]
+    environment:
+      CONVERSATION_SERVICE_PORT: "3104"
+      CONVERSATION_SERVICE_GRPC_PORT: "5104"
+      LLM_PROVIDER: "${LLM_PROVIDER:-mock}"
+      TTS_PROVIDER: "${TTS_PROVIDER:-mock}"
+      ASR_PROVIDER: "${ASR_PROVIDER:-mock}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_LLM_MODEL: "${OPENAI_LLM_MODEL:-gpt-4.1-mini}"
+    ports:
+      - "${CONVERSATION_SERVICE_PORT:-3104}:3104"
+      - "${CONVERSATION_SERVICE_GRPC_PORT:-5104}:5104"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3104/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  chat-agent-service:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/chat-agent-service"]
+    environment:
+      CHAT_AGENT_SERVICE_PORT: "3105"
+      LIVEKIT_URL: "${LIVEKIT_URL:-}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-}"
+      LIVEKIT_AGENT_TOKEN_TTL_SECONDS: "${LIVEKIT_AGENT_TOKEN_TTL_SECONDS:-1800}"
+      PROFILE_SERVICE_BASE_URL: "http://profile-service:3102"
+      SESSION_SERVICE_BASE_URL: "http://session-service:3103"
+      CONVERSATION_SERVICE_BASE_URL: "http://conversation-service:3104"
+      ASR_PROVIDER: "${ASR_PROVIDER:-mock}"
+      TTS_PROVIDER: "${TTS_PROVIDER:-mock}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_STT_MODEL: "${OPENAI_STT_MODEL:-gpt-4o-mini-transcribe}"
+      OPENAI_STT_LANGUAGE: "${OPENAI_STT_LANGUAGE:-}"
+      OPENAI_STT_SAMPLE_RATE: "${OPENAI_STT_SAMPLE_RATE:-16000}"
+      OPENAI_TTS_MODEL: "${OPENAI_TTS_MODEL:-gpt-4o-mini-tts}"
+      OPENAI_TTS_VOICE: "${OPENAI_TTS_VOICE:-alloy}"
+      OPENAI_TTS_SAMPLE_RATE: "${OPENAI_TTS_SAMPLE_RATE:-24000}"
+      LIVEKIT_AGENT_AUDIO_BUFFER_SECONDS: "${LIVEKIT_AGENT_AUDIO_BUFFER_SECONDS:-12}"
+      LIVEKIT_AGENT_VAD_SPEECH_RMS_THRESHOLD: "${LIVEKIT_AGENT_VAD_SPEECH_RMS_THRESHOLD:-0.018}"
+      LIVEKIT_AGENT_VAD_END_SILENCE_MS: "${LIVEKIT_AGENT_VAD_END_SILENCE_MS:-800}"
+      LIVEKIT_AGENT_VAD_MIN_SPEECH_MS: "${LIVEKIT_AGENT_VAD_MIN_SPEECH_MS:-280}"
+      LIVEKIT_AGENT_VAD_MAX_UTTERANCE_MS: "${LIVEKIT_AGENT_VAD_MAX_UTTERANCE_MS:-12000}"
+    ports:
+      - "${CHAT_AGENT_SERVICE_PORT:-3105}:3105"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3105/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      profile-service:
+        condition: service_healthy
+      session-service:
+        condition: service_healthy
+      conversation-service:
+        condition: service_healthy
+
+  app-server:
+    image: yourpassenger-local-services
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["npm", "run", "start", "-w", "@yourpassenger/app-server"]
+    environment:
+      APP_SERVER_PORT: "3000"
+      AUTH_TOKEN_SECRET: "${AUTH_TOKEN_SECRET}"
+      AUTH_SERVICE_BASE_URL: "http://auth-service:3101"
+      PROFILE_SERVICE_BASE_URL: "http://profile-service:3102"
+      SESSION_SERVICE_BASE_URL: "http://session-service:3103"
+      CONVERSATION_SERVICE_BASE_URL: "http://conversation-service:3104"
+      CHAT_AGENT_SERVICE_BASE_URL: "http://chat-agent-service:3105"
+      CONVERSATION_SERVICE_GRPC_URL: "conversation-service:5104"
+      PUBLIC_WS_BASE_URL: "${PUBLIC_WS_BASE_URL:-ws://localhost:${APP_SERVER_PORT:-3000}}"
+      LIVEKIT_URL: "${LIVEKIT_URL:-}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-}"
+      LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS: "${LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS:-1800}"
+    ports:
+      - "${APP_SERVER_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/v1/health/ready').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      profile-service:
+        condition: service_healthy
+      session-service:
+        condition: service_healthy
+      conversation-service:
+        condition: service_healthy
+      chat-agent-service:
+        condition: service_healthy
+
+volumes:
+  yourpassenger-local-postgres:

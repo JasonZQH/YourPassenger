@@ -1,0 +1,155 @@
+import {
+  Agent as HttpAgent,
+  request as httpRequest,
+} from 'http';
+import {
+  Agent as HttpsAgent,
+  request as httpsRequest,
+} from 'https';
+import {
+  BadGatewayException,
+  HttpException,
+  Injectable,
+  OnModuleDestroy,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+
+@Injectable()
+export class DownstreamHttpService implements OnModuleDestroy {
+  private readonly httpAgent = new HttpAgent({
+    keepAlive: true,
+    maxSockets: 50,
+    keepAliveMsecs: 1000,
+  });
+
+  private readonly httpsAgent = new HttpsAgent({
+    keepAlive: true,
+    maxSockets: 50,
+    keepAliveMsecs: 1000,
+  });
+
+  // Destroys pooled HTTP agents when the module shuts down.
+  onModuleDestroy() {
+    this.httpAgent.destroy();
+    this.httpsAgent.destroy();
+  }
+
+  // Sends a JSON GET request to a downstream service.
+  async get<T>(baseUrl: string, path: string, headers?: Record<string, string>): Promise<T> {
+    return this.request<T>(baseUrl, path, 'GET', undefined, headers);
+  }
+
+  // Sends a JSON POST request to a downstream service.
+  async post<T>(
+    baseUrl: string,
+    path: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T> {
+    return this.request<T>(baseUrl, path, 'POST', body, headers);
+  }
+
+  // Performs the low-level HTTP request and parses the JSON response.
+  private async request<T>(
+    baseUrl: string,
+    path: string,
+    method: 'GET' | 'POST',
+    body?: unknown,
+    headers: Record<string, string> = {},
+  ): Promise<T> {
+    const url = new URL(this.joinUrl(baseUrl, path));
+    const payload = body === undefined ? undefined : JSON.stringify(body);
+
+    return new Promise<T>((resolve, reject) => {
+      const requestImpl = url.protocol === 'https:' ? httpsRequest : httpRequest;
+      const request = requestImpl(
+        url,
+        {
+          method,
+          agent: url.protocol === 'https:' ? this.httpsAgent : this.httpAgent,
+          headers: {
+            accept: 'application/json',
+            ...(payload
+              ? {
+                  'content-type': 'application/json',
+                  'content-length': Buffer.byteLength(payload).toString(),
+                }
+              : {}),
+            ...headers,
+          },
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          response.on('end', () => {
+            const text = Buffer.concat(chunks).toString('utf8');
+            const parsed = this.parsePayload(text);
+            const statusCode = response.statusCode ?? 502;
+
+            if (statusCode < 200 || statusCode >= 300) {
+              reject(this.toHttpException(statusCode, parsed));
+              return;
+            }
+
+            resolve(parsed as T);
+          });
+        },
+      );
+
+      request.setTimeout(4000, () => {
+        request.destroy(new Error(`Request to ${url.toString()} timed out.`));
+      });
+      request.on('error', (error) => {
+        reject(
+          new BadGatewayException({
+            message: `Downstream request to ${url.toString()} failed.`,
+            error: error.message,
+          }),
+        );
+      });
+
+      if (payload) {
+        request.write(payload);
+      }
+
+      request.end();
+    });
+  }
+
+  // Joins a base URL and API path without duplicating slashes.
+  private joinUrl(baseUrl: string, path: string): string {
+    const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${normalizedBaseUrl}${normalizedPath}`;
+  }
+
+  // Parses a response body as JSON or wraps plain text as a message.
+  private parsePayload(text: string): unknown {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return { message: trimmed };
+    }
+  }
+
+  // Converts downstream failure status codes into Nest HTTP exceptions.
+  private toHttpException(statusCode: number, payload: unknown): HttpException {
+    const responseBody =
+      payload && typeof payload === 'object'
+        ? payload
+        : { message: `Downstream request failed with status ${statusCode}.` };
+
+    if (statusCode === 503) {
+      return new ServiceUnavailableException(responseBody);
+    }
+
+    return new HttpException(responseBody, statusCode);
+  }
+}

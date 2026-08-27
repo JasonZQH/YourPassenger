@@ -3,6 +3,7 @@ import SwiftUI
 struct AuthView: View {
     @EnvironmentObject private var appViewModel: AppViewModel
 
+    // Renders the sign-in screen and auth actions.
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             Spacer()

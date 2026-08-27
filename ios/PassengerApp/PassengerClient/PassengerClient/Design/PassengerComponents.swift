@@ -5,6 +5,7 @@ struct PassengerPrimaryButton: View {
     let isLoading: Bool
     let action: () -> Void
 
+    // Renders the app's primary full-width action button.
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
@@ -29,10 +30,12 @@ struct PassengerPrimaryButton: View {
 struct PassengerCard<Content: View>: View {
     let content: Content
 
+    // Captures caller-provided card content.
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
+    // Renders a reusable bordered panel container.
     var body: some View {
         content
             .padding(20)
@@ -51,6 +54,7 @@ struct TagChip: View {
     let isSelected: Bool
     let action: () -> Void
 
+    // Renders a selectable tag chip button.
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -73,6 +77,7 @@ struct AvatarButton: View {
     let label: String
     let action: () -> Void
 
+    // Renders the circular avatar navigation button.
     var body: some View {
         Button(action: action) {
             ZStack {
@@ -94,6 +99,7 @@ struct SectionTitle: View {
     let title: String
     let subtitle: String
 
+    // Renders the standard section header block.
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(eyebrow.uppercased())
@@ -115,6 +121,7 @@ struct SectionTitle: View {
 struct WaveformView: View {
     let isAnimating: Bool
 
+    // Renders the animated voice waveform bars.
     var body: some View {
         HStack(spacing: 8) {
             ForEach(0..<5) { index in

@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package yourpassenger.conversation;
+
+service ConversationHotPathService {
+  rpc BuildRealtimeTurn (BuildRealtimeTurnRequest) returns (RealtimeTurnReply);
+}
+
+message UserProfile {
+  string userId = 1;
+  string nickname = 2;
+  repeated string interests = 3;
+  string ageRange = 4;
+  string gender = 5;
+  string occupationCategory = 6;
+  repeated string hobbyTags = 7;
+  string preferredLanguage = 8;
+  string conversationStyle = 9;
+  string responseLength = 10;
+  bool proactiveTopicPushing = 11;
+  repeated string avoidTopicTags = 12;
+  string updatedAt = 13;
+}
+
+message SessionTurn {
+  string role = 1;
+  string text = 2;
+  string createdAt = 3;
+}
+
+message SessionRecord {
+  string id = 1;
+  string status = 2;
+  string startedAt = 3;
+  string endedAt = 4;
+  string latestAssistantState = 5;
+  repeated SessionTurn turns = 6;
+}
+
+message BuildRealtimeTurnRequest {
+  string utterance = 1;
+  bool hasProfile = 2;
+  UserProfile profile = 3;
+  SessionRecord session = 4;
+}
+
+message RealtimeTurnReply {
+  string transcriptText = 1;
+  string assistantText = 2;
+  string audioFormat = 3;
+  string audioPayload = 4;
+}

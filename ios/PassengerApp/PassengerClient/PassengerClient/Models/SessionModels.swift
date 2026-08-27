@@ -3,8 +3,12 @@ import Foundation
 struct ChatSession: Equatable {
     let id: String
     let startedAt: Date
-    let wsURL: URL
-    let realtimeToken: String
+    let realtime: RealtimeConnection
+}
+
+enum RealtimeConnection: Equatable {
+    case websocket(wsURL: URL, token: String)
+    case livekit(livekitURL: URL, roomName: String, participantToken: String)
 }
 
 struct SessionSummary: Equatable {
@@ -31,6 +35,7 @@ enum AssistantState: String, Codable {
     case thinking
     case speaking
 
+    // Returns display text for the assistant state.
     var title: String {
         rawValue.capitalized
     }

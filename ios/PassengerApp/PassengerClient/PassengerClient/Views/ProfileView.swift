@@ -3,6 +3,7 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject private var appViewModel: AppViewModel
 
+    // Renders profile editing with a simple back affordance.
     var body: some View {
         VStack(spacing: 0) {
             HStack {

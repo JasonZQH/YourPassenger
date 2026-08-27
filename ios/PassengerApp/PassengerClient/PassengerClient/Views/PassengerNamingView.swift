@@ -14,6 +14,7 @@ struct PassengerNamingView: View {
         "Lumi"
     ]
 
+    // Renders the passenger naming step and suggestion chips.
     var body: some View {
         ZStack {
             PassengerTheme.canvas
@@ -96,15 +97,18 @@ struct PassengerNamingView: View {
         }
     }
 
+    // Returns the trimmed draft passenger name.
     private var normalizedName: String {
         draftName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // Builds the live preview line for the chosen passenger name.
     private var previewLine: String {
         let name = normalizedName.isEmpty ? "Passenger" : normalizedName
         return "Hey, I am \(name). Want to talk about your next ride?"
     }
 
+    // Renders the animated background accent for the naming screen.
     private var backgroundGlow: some View {
         ZStack {
             Circle()

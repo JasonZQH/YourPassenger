@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var appViewModel: AppViewModel
 
+    // Renders the root screen switcher and shared error alert.
     var body: some View {
         ZStack {
             PassengerTheme.canvas

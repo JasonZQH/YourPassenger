@@ -1,277 +1,121 @@
-# AI Passenger MVP Pages and API Contract
+# AI Passenger MVP Pages and Public API Contract
 
 ## Goal
 
-This document defines the first usable MVP slice for the AI Passenger app:
+This document defines the current MVP slice for the AI Passenger app:
 
-- Swift iOS client with a tappable page skeleton
-- NestJS backend with minimal session, profile, and conversation APIs
-- Manual start and manual end for a conversation session
-- Real-time voice chat over WebSocket
+- Swift iOS client running in Simulator
+- `app-server` as the public REST + WebSocket entrypoint
+- internal `auth/profile/session/conversation` services behind `app-server`
+- manual start and manual end for a conversation session
+- real-time chat over WebSocket with a narrow hot path
 
-The MVP does not include:
+The MVP still does not include:
 
 - Bluetooth detection
-- Auto-start driving detection
-- Auto-end driving detection
+- auto-start driving detection
+- auto-end driving detection
 - CarPlay integration
-- Complex multi-agent service decomposition
+- real microphone / ASR / TTS pipeline
+
+## Runtime Architecture
+
+```text
++----------------------+
+| iOS Simulator Client |
++----------------------+
+          |
+          | HTTP: /v1/auth/*, /v1/me, /v1/profile, /v1/sessions/*
+          | WebSocket: /v1/realtime?sessionId=...
+          v
++---------------------------------------------------------------------------------+
+|                                   app-server                                    |
+|                                 public REST + WS                                |
++---------------------------------------------------------------------------------+
+   | HTTP              | HTTP                | HTTP                | gRPC
+   v                   v                     v                     v
++--------------+  +----------------+  +----------------+  +----------------------+
+| auth-service |  | profile-service|  | session-service|  | conversation-service |
++--------------+  +----------------+  +----------------+  +----------------------+
+       |                  |                     |                    |
+       |                  |                     |                    +--> realtime turn generation
+       |                  |                     |                    +--> reply generation
+       |                  |                     |                    +--> summary generation
+       v                  v                     v
++-------------+   +---------------+    +---------------+
+| auth Postgres|   |profile Postgres|   |session Postgres|
++-------------+   +---------------+    +---------------+
+
+Session end path:
+
++----------------------+      +----------------------+      +----------------------+
+| iOS Simulator Client | ---> |      app-server      | ---> |    session-service   |
++----------------------+      +----------------------+      +----------------------+
+                                                                  |            |
+                                                                  | HTTP       | HTTP
+                                                                  v            v
+                                                       +----------------+  +----------------------+
+                                                       | profile-service|  | conversation-service |
+                                                       +----------------+  +----------------------+
+                                                                  \            /
+                                                                   \          /
+                                                                    v        v
+                                                             +----------------------+
+                                                             |   session Postgres   |
+                                                             +----------------------+
+
+Realtime hot path:
+
++----------------------+      +----------------------+      +----------------------+
+| iOS Simulator Client | ---> |      app-server      | ---> | conversation-service |
++----------------------+  WS  +----------------------+ gRPC +----------------------+
+                                   |
+                                   | HTTP commit completed turn
+                                   v
+                         +----------------------+
+                         |    session-service   |
+                         +----------------------+
+                                   |
+                                   v
+                         +----------------------+
+                         |   session Postgres   |
+                         +----------------------+
+```
+
+Responsibilities:
+
+- `app-server`: public contract, auth enforcement, aggregation, websocket termination
+- `auth-service`: sign-in and token validation
+- `profile-service`: profile truth
+- `session-service`: session / turns / summaries truth, plus end-session summary orchestration
+- `conversation-service`: reply and summary generation logic, plus gRPC realtime turn generation
 
 ## MVP User Flow
 
 1. User signs in.
-2. User completes profile onboarding.
-3. User lands on the home screen directly after onboarding completes.
+2. User completes onboarding if no profile exists.
+3. User lands on home.
 4. User taps `Start Chat`.
-5. App creates a conversation session.
-6. User enters the live voice chat screen.
-7. User speaks, backend processes the input through the agentic pipeline, and returns a voice response.
-8. User taps `End`.
-9. App shows a session summary screen.
-
-## iOS Page Structure
-
-### 1. Launch / Auth
-
-Purpose:
-
-- Restore session if token exists
-- Otherwise enter sign-in flow
-
-Core UI:
-
-- App logo
-- `Continue with Apple`
-- `Continue as Guest` for internal MVP testing only
-
-Client state:
-
-- `authStatus`: `unknown | signed_out | signed_in`
-- `accessToken`
-- `userId`
-
-Calls:
-
-- `POST /v1/auth/apple`
-- `POST /v1/auth/guest`
-- `GET /v1/me`
-
-Exit conditions:
-
-- If profile is incomplete, move to onboarding
-- If profile is complete, move to home
-
-### 2. Onboarding / Preference Setup
-
-Purpose:
-
-- Collect the minimum profile needed to steer conversation generation
-
-Core UI:
-
-- Interest multi-select chips
-- Background form
-- Conversation style preferences
-- Optional avoid-topic section
-- `Continue`
-
-Suggested fields:
-
-- `nickname`
-- `interests`: `history`, `international_news`, `sports`, `travel`, `gaming`, `technology`, `finance`, `movies`, `music`
-- `ageRange`: `under_18 | 18_24 | 25_34 | 35_44 | 45_54 | 55_plus`
-- `gender`: `female | male | nonbinary | prefer_not_to_say`
-- `occupationCategory`: `student | tech | finance | healthcare | education | creative | business | service | logistics | other`
-- `hobbyTags`: `reading`, `fitness`, `cooking`, `photography`, `music`, `movies`, `hiking`, `cars`, `podcasts`, `design`
-- `preferredLanguage`
-- `conversationStyle`: `relaxed | curious | analytical`
-- `responseLength`: `short | medium`
-- `proactiveTopicPushing`: boolean
-- `avoidTopicTags`: `politics`, `religion`, `graphic_violence`, `personal_finance`, `dating`
-
-Profile rules:
-
-- Do not ask for a real name anywhere in MVP
-- `nickname` is the only user-entered identity field and should be framed as the name the AI uses in conversation
-- Background and preference data should be collected with chips, pickers, or segmented controls instead of free-text inputs
-
-Client state:
-
-- `profileDraft`
-- `isSubmitting`
-
-Calls:
-
-- `PUT /v1/profile`
-- `GET /v1/profile`
-
-Exit condition:
-
-- Navigate to home after profile save succeeds
-
-### 3. Home
-
-Purpose:
-
-- One clear entry point into the conversation experience
-
-Core UI:
-
-- Primary CTA: `Start Chat`
-- Top-right avatar button that opens profile
-
-MVP home screen rules:
-
-- Keep the screen intentionally sparse
-- Do not add dashboard widgets just to fill space
-- Any session history, recommendation cards, or activity surfaces should be deferred
-
-Client state:
-
-- `profile`
-- `isStartingSession`
-
-Calls:
-
-- `GET /v1/profile`
-- `POST /v1/sessions`
-
-Exit conditions:
-
-- `Start Chat` creates a session and opens the live chat screen
-- Avatar opens the profile page
-
-### 4. Profile
-
-Purpose:
-
-- Let the user review and edit the profile created during onboarding
-
-Core UI:
-
-- Avatar and nickname
-- Editable sections for interests, background, and conversation preferences
-- `Save`
-
-Client state:
-
-- `profile`
-- `profileDraft`
-- `isSaving`
-
-Calls:
-
-- `GET /v1/profile`
-- `PUT /v1/profile`
-
-Exit conditions:
-
-- `Save` returns to home
-- Back returns to home without changes
-
-### 5. Live Voice Chat
-
-Purpose:
-
-- Main driving-safe interaction screen
-
-Core UI:
-
-- Current assistant status: `Listening`, `Thinking`, `Speaking`
-- Transcript strip for the most recent exchange
-- Big circular input area with microphone waveform
-- `Interrupt` button while assistant is speaking
-- `End` button
-
-Client state:
-
-- `sessionId`
-- `connectionStatus`
-- `assistantState`: `idle | listening | thinking | speaking`
-- `partialTranscript`
-- `finalTranscript`
-- `latestAssistantText`
-- `isInterrupted`
-
-Transport:
-
-- WebSocket for real-time events
-
-Calls:
-
-- `GET /v1/sessions/:id`
-- `WS connect /v1/realtime?sessionId=...`
-- `POST /v1/sessions/:id/end`
-
-Realtime actions:
-
-- stream audio chunks
-- receive partial ASR text
-- receive final ASR text
-- receive assistant response text
-- receive TTS playback metadata
-- send interrupt
-
-Exit conditions:
-
-- User taps `End`
-- App transitions to session summary
-
-### 6. Session Summary
-
-Purpose:
-
-- Give the user a clean end-state and provide conversation continuity for next time
-
-Core UI:
-
-- Short session summary
-- Topics discussed
-- `Start New Session`
-- `Back Home`
-
-Client state:
-
-- `summary`
-- `topics`
-- `sessionDuration`
-
-Calls:
-
-- `GET /v1/sessions/:id/summary`
-
-## Navigation Graph
-
-```text
-Launch/Auth
-  -> Onboarding
-  -> Home
-
-Home
-  -> Profile
-  -> Live Voice Chat
-
-Profile
-  -> Home
-
-Live Voice Chat
-  -> Session Summary
-
-Session Summary
-  -> Home
-  -> Live Voice Chat
-```
-
-## Backend Surface
-
-The backend should expose two interface types:
-
-- HTTP for auth, profile, session lifecycle, and summary data
-- raw WebSocket for real-time voice conversation events
-
-For MVP, this is enough. Internal service extraction should later use `gRPC over TCP`, while the iOS client continues to use raw WebSocket externally.
-
-## REST API Contract
+5. App creates a session.
+6. App connects websocket to `/v1/realtime`.
+7. User sends a text-backed `audio.commit` event.
+8. App receives transcript + assistant state + assistant text/audio events.
+9. User taps `End`.
+10. App fetches the session summary.
+
+## iOS Screen Stack
+
+1. `AuthView`
+2. `OnboardingView`
+3. `PassengerNamingView`
+4. `HomeView`
+5. `ProfileView`
+6. `LiveChatView`
+7. `SessionSummaryView`
+
+## Public API Surface
+
+All public routes are served by `app-server`.
 
 ### Auth
 
@@ -281,7 +125,7 @@ Request:
 
 ```json
 {
-  "identityToken": "apple-jwt-token"
+  "identityToken": "apple-or-local-dev-token"
 }
 ```
 
@@ -289,11 +133,11 @@ Response:
 
 ```json
 {
-  "accessToken": "jwt",
-  "refreshToken": "jwt",
+  "accessToken": "token",
+  "refreshToken": "token",
   "user": {
     "id": "usr_123",
-    "nickname": "Alex",
+    "nickname": "Rider",
     "profileCompleted": false
   }
 }
@@ -301,27 +145,19 @@ Response:
 
 #### `POST /v1/auth/guest`
 
-Request:
-
-```json
-{}
-```
-
 Response:
 
 ```json
 {
-  "accessToken": "jwt",
-  "refreshToken": "jwt",
+  "accessToken": "token",
+  "refreshToken": "token",
   "user": {
-    "id": "guest_123",
+    "id": "usr_123",
     "nickname": "Guest",
     "profileCompleted": false
   }
 }
 ```
-
-### Current User
 
 #### `GET /v1/me`
 
@@ -330,7 +166,7 @@ Response:
 ```json
 {
   "id": "usr_123",
-  "nickname": "Alex",
+  "nickname": "Rider",
   "profileCompleted": true
 }
 ```
@@ -339,25 +175,27 @@ Response:
 
 #### `GET /v1/profile`
 
-Response:
+Response when profile exists:
 
 ```json
 {
   "userId": "usr_123",
-  "nickname": "Alex",
-  "interests": ["history", "travel", "technology"],
+  "nickname": "Rider",
+  "interests": ["technology"],
   "ageRange": "25_34",
   "gender": "prefer_not_to_say",
   "occupationCategory": "tech",
-  "hobbyTags": ["reading", "podcasts", "travel"],
+  "hobbyTags": ["design"],
   "preferredLanguage": "en",
   "conversationStyle": "curious",
   "responseLength": "short",
   "proactiveTopicPushing": true,
-  "avoidTopicTags": ["graphic_violence"],
-  "updatedAt": "2026-04-13T10:00:00Z"
+  "avoidTopicTags": ["politics"],
+  "updatedAt": "2026-04-20T00:00:00.000Z"
 }
 ```
+
+If profile does not exist yet, the current implementation may return `null` or an empty body.
 
 #### `PUT /v1/profile`
 
@@ -365,17 +203,17 @@ Request:
 
 ```json
 {
-  "nickname": "Alex",
-  "interests": ["history", "travel", "technology"],
+  "nickname": "Rider",
+  "interests": ["technology"],
   "ageRange": "25_34",
   "gender": "prefer_not_to_say",
   "occupationCategory": "tech",
-  "hobbyTags": ["reading", "podcasts", "travel"],
+  "hobbyTags": ["design"],
   "preferredLanguage": "en",
   "conversationStyle": "curious",
   "responseLength": "short",
   "proactiveTopicPushing": true,
-  "avoidTopicTags": ["graphic_violence"]
+  "avoidTopicTags": ["politics"]
 }
 ```
 
@@ -392,10 +230,6 @@ Response:
 
 #### `POST /v1/sessions`
 
-Purpose:
-
-- Create a manual conversation session after the user taps the start button
-
 Request:
 
 ```json
@@ -411,14 +245,38 @@ Response:
   "session": {
     "id": "ses_123",
     "status": "active",
-    "startedAt": "2026-04-13T10:05:00Z"
+    "startedAt": "2026-04-20T00:00:00.000Z"
   },
   "realtime": {
-    "wsUrl": "wss://api.example.com/v1/realtime?sessionId=ses_123",
-    "token": "realtime-jwt"
+    "transport": "websocket",
+    "wsUrl": "ws://localhost:3000/v1/realtime?sessionId=ses_123",
+    "token": "token"
   }
 }
 ```
+
+If `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` are configured on
+`app-server`, the realtime payload switches to LiveKit:
+
+```json
+{
+  "session": {
+    "id": "ses_123",
+    "status": "active",
+    "startedAt": "2026-04-20T00:00:00.000Z"
+  },
+  "realtime": {
+    "transport": "livekit",
+    "livekitUrl": "wss://your-livekit-host",
+    "roomName": "yp_ses_ses_123",
+    "participantToken": "scoped-livekit-jwt"
+  }
+}
+```
+
+The WebSocket response remains the local fallback and debug transport.
+When the LiveKit response is used, `app-server` also dispatches
+`chat-agent-service` to join the same room as `agent_<sessionId>`.
 
 #### `GET /v1/sessions/:id`
 
@@ -428,7 +286,7 @@ Response:
 {
   "id": "ses_123",
   "status": "active",
-  "startedAt": "2026-04-13T10:05:00Z",
+  "startedAt": "2026-04-20T00:00:00.000Z",
   "latestAssistantState": "idle"
 }
 ```
@@ -449,7 +307,7 @@ Response:
 {
   "id": "ses_123",
   "status": "ended",
-  "endedAt": "2026-04-13T10:42:00Z"
+  "endedAt": "2026-04-20T00:10:00.000Z"
 }
 ```
 
@@ -460,52 +318,33 @@ Response:
 ```json
 {
   "sessionId": "ses_123",
-  "durationSeconds": 2220,
-  "summary": "You discussed Roman history, solo travel in Spain, and EV road trips.",
-  "topics": ["history", "travel", "electric vehicles"],
+  "durationSeconds": 600,
+  "summary": "You talked about travel and technology.",
+  "topics": ["technology"],
   "memoryCandidates": [
-    "User is planning a trip to Spain.",
-    "User enjoys history with a practical angle."
+    "User prefers a curious conversation style.",
+    "Session contained 4 turns."
   ]
 }
 ```
 
-## WebSocket Contract
+## Public Realtime Contract
 
-Client opens:
+WebSocket endpoint:
 
 ```text
-GET wss://api.example.com/v1/realtime?sessionId=ses_123
+GET ws://localhost:3000/v1/realtime?sessionId=ses_123
+Authorization: Bearer <accessToken>
 ```
 
-MVP note:
-
-- this is a raw WebSocket endpoint, not Socket.IO
-- the `realtime.token` field is reserved for later auth wiring
-- until ASR is connected, `audio.commit` may optionally carry a `text` field for development
-
-### Client -> Server Events
-
-#### `audio.chunk`
-
-```json
-{
-  "type": "audio.chunk",
-  "sequence": 1,
-  "audioFormat": "pcm16",
-  "sampleRate": 16000,
-  "payload": "<base64>"
-}
-```
+### Client Events
 
 #### `audio.commit`
-
-Marks the end of the current user utterance.
 
 ```json
 {
   "type": "audio.commit",
-  "text": "Tell me something about the Silk Road."
+  "text": "Tell me something interesting for the road."
 }
 ```
 
@@ -522,11 +361,11 @@ Marks the end of the current user utterance.
 ```json
 {
   "type": "ping",
-  "ts": 1770000000
+  "ts": 1710000000
 }
 ```
 
-### Server -> Client Events
+### Server Events
 
 #### `session.ready`
 
@@ -537,22 +376,13 @@ Marks the end of the current user utterance.
 }
 ```
 
-#### `transcript.partial`
-
-```json
-{
-  "type": "transcript.partial",
-  "text": "tell me something about"
-}
-```
-
 #### `transcript.final`
 
 ```json
 {
   "type": "transcript.final",
   "utteranceId": "utt_001",
-  "text": "Tell me something about the Silk Road."
+  "text": "Tell me something interesting for the road."
 }
 ```
 
@@ -565,20 +395,13 @@ Marks the end of the current user utterance.
 }
 ```
 
-Allowed values:
-
-- `idle`
-- `listening`
-- `thinking`
-- `speaking`
-
 #### `assistant.text`
 
 ```json
 {
   "type": "assistant.text",
   "messageId": "msg_001",
-  "text": "The Silk Road was less a single road and more a trade network that linked China, Central Asia, the Middle East, and Europe."
+  "text": "Short answer for Rider: ..."
 }
 ```
 
@@ -589,7 +412,7 @@ Allowed values:
   "type": "assistant.audio",
   "messageId": "msg_001",
   "audioFormat": "mp3",
-  "payload": "<base64>"
+  "payload": ""
 }
 ```
 
@@ -602,83 +425,95 @@ Allowed values:
 }
 ```
 
+#### `pong`
+
+```json
+{
+  "type": "pong",
+  "ts": 1710000000
+}
+```
+
 #### `error`
 
 ```json
 {
   "type": "error",
-  "code": "ASR_TIMEOUT",
-  "message": "Speech recognition timed out."
+  "code": "SESSION_NOT_FOUND",
+  "message": "Session ses_123 not found."
 }
 ```
 
-## Agentic Pipeline Contract
+## Internal Service Ownership
 
-The MVP backend should not treat the model as a single black-box brain. The orchestrator should run a fixed chain per utterance:
+### `auth-service`
 
-1. `ASR`
-2. `Input Normalizer`
-3. `Intent Router`
-4. `Profile Retriever`
-5. `Short-Term Memory Retriever`
-6. `Response Planner`
-7. `LLM Generator`
-8. `TTS`
-9. `Memory Writer` after response is complete
+Owns:
 
-### Orchestrator Inputs
+- Apple / Guest sign-in
+- token issuance and validation
+- auth identity persistence
 
-- current `sessionId`
-- current user utterance
-- user profile
-- latest session turns
-- optional memory candidates
-- option-based background fields such as age range, occupation category, and hobby tags
+### `profile-service`
 
-### Orchestrator Outputs
+Owns:
 
-- assistant text
-- assistant style metadata
-- TTS request
-- memory write candidates
+- onboarding fields
+- nickname and preferences
+- profile completeness truth
 
-## NestJS Module Suggestion
+### `session-service`
 
-Keep the MVP small. Do not split into too many deployable services yet.
+Owns:
 
-Recommended modules:
+- session lifecycle
+- session ownership validation
+- user and assistant turns
+- assistant state
+- summaries
+- end-session summary orchestration
 
-- `AuthModule`
-- `UsersModule`
-- `ProfileModule`
-- `SessionsModule`
-- `RealtimeModule`
-- `ConversationModule`
-- `AiAdaptersModule`
+### `conversation-service`
 
-Suggested internal providers:
+Owns:
 
-- `AsrAdapter`
-- `LlmAdapter`
-- `TtsAdapter`
-- `ConversationOrchestrator`
-- `MemoryService`
-- `ProfileContextService`
+- assistant reply generation
+- conversation summary generation
+- gRPC realtime turn generation for `app-server`
+- future ASR / LLM / TTS integration points
 
-## Recommended Delivery Order
+Session summary path:
 
-1. Build the Swift page skeleton with mocked data.
-2. Lock the REST and WebSocket payloads above.
-3. Implement `Auth`, `Profile`, and `Sessions` in NestJS.
-4. Implement the WebSocket realtime gateway with fake assistant replies first.
-5. Replace fake replies with the actual orchestrator pipeline.
-6. Add session summary generation.
+1. `app-server` forwards `POST /v1/sessions/:id/end`
+2. `session-service` loads the owned session
+3. `session-service` fetches a profile snapshot from `profile-service`
+4. `session-service` asks `conversation-service` to build the summary
+5. `session-service` stores the summary and marks the session ended
 
-## What To Defer
+## Realtime Hot Path Rule
 
-- Kubernetes
-- automatic drive detection
-- Bluetooth logic
-- advanced memory ranking
-- complex analytics
-- background conversation resume
+The current design keeps the realtime hot path narrow:
+
+1. client connects to `app-server`
+2. `app-server` validates bearer token
+3. `app-server` validates `sessionId` ownership
+4. `app-server` loads profile + session snapshot once during bootstrap
+5. `app-server` forwards realtime turn generation to `conversation-service` over gRPC
+6. `app-server` persists the completed realtime turn to `session-service` in a single commit
+7. `app-server` emits websocket events to the client
+
+This avoids synchronous fan-out to all services on every realtime event.
+
+Bootstrap behavior:
+
+- `app-server` now buffers websocket messages received before realtime bootstrap completes
+- this prevents the first `audio.commit` from being dropped if the client sends immediately after socket open
+- `session.ready` remains the stable protocol marker that the session is ready for normal traffic
+
+## Current Limitations
+
+- Apple sign-in is still mock-token based on the iOS side
+- realtime is text-driven, not real microphone streaming yet
+- assistant audio payload is still a placeholder
+- no background conversation resume
+- no CarPlay or automatic drive detection

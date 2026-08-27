@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		66EE8EA22F90000100FCA4DD /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 66EE8EA32F90000100FCA4DD /* LiveKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		66EE8E862F8DDCEB00FCA4DD /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				66EE8EA22F90000100FCA4DD /* LiveKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = PassengerClient;
 			packageProductDependencies = (
+				66EE8EA32F90000100FCA4DD /* LiveKit */,
 			);
 			productName = PassengerClient;
 			productReference = 66EE8E782F8DDCE900FCA4DD /* PassengerClient.app */;
@@ -194,6 +200,9 @@
 				Base,
 			);
 			mainGroup = 66EE8E6F2F8DDCE900FCA4DD;
+			packageReferences = (
+				66EE8EA42F90000100FCA4DD /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
+			);
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 66EE8E792F8DDCE900FCA4DD /* Products */;
@@ -398,6 +407,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Passenger uses the microphone for realtime voice chat.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -430,6 +440,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Passenger uses the microphone for realtime voice chat.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -572,6 +583,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		66EE8EA42F90000100FCA4DD /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.13.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		66EE8EA32F90000100FCA4DD /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 66EE8EA42F90000100FCA4DD /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 66EE8E702F8DDCE900FCA4DD /* Project object */;
 }

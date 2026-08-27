@@ -5,6 +5,7 @@ enum BackendAPIError: LocalizedError {
     case invalidResponse
     case httpStatus(Int)
 
+    // Describes backend API failures for UI and debug output.
     var errorDescription: String? {
         switch self {
         case .invalidURL:
@@ -29,12 +30,14 @@ final class BackendAPIClient: APIClient {
     private let encoder: JSONEncoder
     private let dateFormatter = ISO8601DateFormatter()
 
+    // Initializes the backend client with URL session and JSON coders.
     init(session: URLSession = .shared) {
         self.session = session
         self.decoder = JSONDecoder()
         self.encoder = JSONEncoder()
     }
 
+    // Restores auth state and fetches profile data when a stored token exists.
     func bootstrap() async throws -> BootstrapPayload {
         guard let token = storedToken else {
             return BootstrapPayload(isAuthenticated: false, profile: nil)
@@ -52,6 +55,7 @@ final class BackendAPIClient: APIClient {
         }
     }
 
+    // Signs in through the backend and stores the returned access token.
     func signIn(method: AuthMethod) async throws -> BootstrapPayload {
         let response: AuthResponse
 
@@ -74,6 +78,7 @@ final class BackendAPIClient: APIClient {
         return BootstrapPayload(isAuthenticated: true, profile: profile)
     }
 
+    // Saves profile data and reloads the backend's canonical profile.
     func saveProfile(_ profile: UserProfile) async throws -> UserProfile {
         guard let token = storedToken else {
             throw BackendAPIError.invalidResponse
@@ -96,6 +101,7 @@ final class BackendAPIClient: APIClient {
         return saved
     }
 
+    // Creates a chat session and resolves its realtime connection details.
     func createSession() async throws -> ChatSession {
         guard let token = storedToken else {
             throw BackendAPIError.invalidResponse
@@ -108,21 +114,18 @@ final class BackendAPIClient: APIClient {
             token: token
         )
 
-        guard let wsURL = URL(string: response.realtime.wsUrl) else {
-            throw BackendAPIError.invalidURL
-        }
-
         let startedAt = dateFormatter.date(from: response.session.startedAt) ?? .now
-        print("[API] createSession:", response.session.id, response.realtime.wsUrl)
+        let realtime = try response.realtime.toRealtimeConnection()
+        print("[API] createSession:", response.session.id, response.realtime.transport ?? "websocket")
 
         return ChatSession(
             id: response.session.id,
             startedAt: startedAt,
-            wsURL: wsURL,
-            realtimeToken: response.realtime.token
+            realtime: realtime
         )
     }
 
+    // Ends a chat session and fetches its generated summary.
     func endSession(id: String) async throws -> SessionSummary {
         guard let token = storedToken else {
             throw BackendAPIError.invalidResponse
@@ -146,11 +149,13 @@ final class BackendAPIClient: APIClient {
         )
     }
 
+    // Stores the access token in user defaults.
     private var storedToken: String? {
         get { UserDefaults.standard.string(forKey: Constants.tokenKey) }
         set { UserDefaults.standard.set(newValue, forKey: Constants.tokenKey) }
     }
 
+    // Returns a stable development Apple identity token for local sign-in.
     private var mockAppleIdentityToken: String {
         if let stored = UserDefaults.standard.string(forKey: Constants.mockAppleIdentityTokenKey),
            !stored.isEmpty {
@@ -162,6 +167,7 @@ final class BackendAPIClient: APIClient {
         return generated
     }
 
+    // Sends a request without a JSON body and decodes the response.
     private func request<Response: Decodable>(
         path: String,
         method: String = "GET",
@@ -170,6 +176,7 @@ final class BackendAPIClient: APIClient {
         try await request(path: path, method: method, body: Optional<EmptyBody>.none, token: token)
     }
 
+    // Sends a JSON request and decodes the response body.
     private func request<Body: Encodable, Response: Decodable>(
         path: String,
         method: String,
@@ -184,6 +191,7 @@ final class BackendAPIClient: APIClient {
         return decoded
     }
 
+    // Sends a GET request that may return null or an empty body.
     private func requestOptional<Response: Decodable>(
         path: String,
         token: String?
@@ -205,6 +213,7 @@ final class BackendAPIClient: APIClient {
         return decoded
     }
 
+    // Builds a URLRequest with JSON headers and optional bearer auth.
     private func makeRequest<Body: Encodable>(
         path: String,
         method: String,
@@ -229,6 +238,7 @@ final class BackendAPIClient: APIClient {
         return request
     }
 
+    // Validates that a URL response is a successful HTTP response.
     private func validate(response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else {
             throw BackendAPIError.invalidResponse
@@ -271,6 +281,7 @@ private struct UpdateProfileRequest: Encodable {
     let proactiveTopicPushing: Bool
     let avoidTopicTags: [AvoidTopicTag]
 
+    // Converts an app profile model into the backend update payload.
     init(from profile: UserProfile) {
         self.nickname = profile.nickname
         self.interests = Array(profile.interests)
@@ -303,8 +314,45 @@ private struct CreateSessionResponse: Decodable {
     }
 
     struct RealtimeNode: Decodable {
-        let wsUrl: String
-        let token: String
+        let transport: String?
+        let wsUrl: String?
+        let token: String?
+        let livekitUrl: String?
+        let roomName: String?
+        let participantToken: String?
+
+        // Converts backend realtime transport fields into the app connection enum.
+        func toRealtimeConnection() throws -> RealtimeConnection {
+            switch transport ?? "websocket" {
+            case "websocket":
+                guard
+                    let wsUrl,
+                    let token,
+                    let url = URL(string: wsUrl)
+                else {
+                    throw BackendAPIError.invalidURL
+                }
+
+                return .websocket(wsURL: url, token: token)
+            case "livekit":
+                guard
+                    let livekitUrl,
+                    let roomName,
+                    let participantToken,
+                    let url = URL(string: livekitUrl)
+                else {
+                    throw BackendAPIError.invalidURL
+                }
+
+                return .livekit(
+                    livekitURL: url,
+                    roomName: roomName,
+                    participantToken: participantToken
+                )
+            default:
+                throw BackendAPIError.invalidResponse
+            }
+        }
     }
 
     let session: SessionNode
@@ -329,6 +377,7 @@ private struct SummaryResponse: Decodable {
 }
 
 private extension Data {
+    // Returns UTF-8 text trimmed of surrounding whitespace.
     var trimmingCharactersUTF8: String {
         String(data: self, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

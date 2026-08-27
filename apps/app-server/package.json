@@ -1,0 +1,30 @@
+{
+  "name": "@yourpassenger/app-server",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/apps/app-server/src/main.js",
+    "start:dev": "ts-node -r tsconfig-paths/register --project tsconfig.json src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/proto-loader": "^0.8.0",
+    "@nestjs/common": "^11.1.19",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.19",
+    "@nestjs/microservices": "^11.1.19",
+    "@nestjs/platform-express": "^11.1.19",
+    "@yourpassenger/contracts": "file:../../packages/contracts",
+    "@yourpassenger/platform": "file:../../packages/platform",
+    "livekit-server-sdk": "^2.15.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}
