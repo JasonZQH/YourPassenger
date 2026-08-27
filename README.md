@@ -138,6 +138,7 @@ Notes:
 
 ## Documentation
 
+- [Second-Drive Sprint](docs/second-drive-sprint.md)
 - [Local development and microservice workflow](docs/local-development-and-microservice-workflow.md)
 - [MVP pages and public API contract](docs/mvp-pages-and-apis.md)
 - [Database creation and update playbook](docs/database-creation-and-update.md)
